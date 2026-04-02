@@ -15,6 +15,11 @@ const ROOM_SIZE = 10;
 const TEAM_SIZE = 5;
 const MAX_HEALTH = 100;
 const RESPAWN_DELAY_MS = 3200;
+const ENABLE_DEV_BOT = process.env.DEV_BOT === "1" || process.env.NODE_ENV !== "production";
+const DEV_BOT_FIRE_INTERVAL_MS = 220;
+const DEV_BOT_BULLET_SPEED = 70;
+const DEV_BOT_RANGE = 90;
+const DEV_BOT_DAMAGE = 8;
 const rooms = new Map();
 
 app.use(express.static(path.join(__dirname, "public")));
@@ -26,7 +31,20 @@ app.get("/health", (_, res) => {
 function createRoom(id) {
   rooms.set(id, {
     id,
-    players: new Map()
+    players: new Map(),
+    devBot: {
+      id: `${id}-dev-bot`,
+      name: "DEV Bot",
+      team: "bravo",
+      weapon: "ak47",
+      health: 100,
+      alive: true,
+      kills: 0,
+      deaths: 0,
+      position: { x: 0, y: 0, z: 0 },
+      direction: { x: 1, y: 0, z: 0 },
+      timer: null
+    }
   });
 }
 
@@ -78,24 +96,40 @@ function pickTeam(room) {
   return null;
 }
 
-function getSpawnPosition(team) {
-  const z = (Math.random() - 0.5) * 28;
-  const xBase = team === "alpha" ? -22 : 22;
-  const x = xBase + (Math.random() - 0.5) * 6;
+function getSpawnPosition() {
+  const x = (Math.random() - 0.5) * 120;
+  const z = (Math.random() - 0.5) * 120;
   return { x, y: 0, z };
 }
 
 function roomPlayersPayload(room) {
-  return Array.from(room.players.values()).map((pws) => ({
+  const players = Array.from(room.players.values()).map((pws) => ({
     id: pws.meta.id,
     name: pws.meta.name,
     team: pws.meta.team,
     weapon: pws.meta.weapon,
+    position: pws.meta.lastPosition || null,
+    rotationY: Number(pws.meta.rotationY) || 0,
     health: pws.meta.health,
     alive: pws.meta.alive,
     kills: pws.meta.kills,
     deaths: pws.meta.deaths
   }));
+  if (ENABLE_DEV_BOT && room.devBot) {
+    players.push({
+      id: room.devBot.id,
+      name: room.devBot.name,
+      team: room.devBot.team,
+      weapon: room.devBot.weapon,
+      position: room.devBot.position,
+      rotationY: 0,
+      health: room.devBot.health,
+      alive: room.devBot.alive,
+      kills: room.devBot.kills,
+      deaths: room.devBot.deaths
+    });
+  }
+  return players;
 }
 
 function sendRoomPlayers(roomId) {
@@ -105,6 +139,49 @@ function sendRoomPlayers(roomId) {
     type: "room:players",
     players: roomPlayersPayload(room)
   });
+}
+
+function startDevBot(room) {
+  if (!ENABLE_DEV_BOT || !room?.devBot) return;
+  if (room.devBot.timer) return;
+  if (room.players.size === 0) return;
+
+  const origin = getSpawnPosition();
+  room.devBot.position = { ...origin };
+  sendToRoom(room.id, {
+    type: "player:update",
+    id: room.devBot.id,
+    name: room.devBot.name,
+    team: room.devBot.team,
+    weapon: room.devBot.weapon,
+    health: room.devBot.health,
+    alive: room.devBot.alive,
+    position: room.devBot.position,
+    rotationY: 0
+  });
+
+  room.devBot.timer = setInterval(() => {
+    if (room.players.size === 0) return;
+    const shot = {
+      direction: room.devBot.direction,
+      damage: DEV_BOT_DAMAGE,
+      range: DEV_BOT_RANGE,
+      bulletSpeed: DEV_BOT_BULLET_SPEED
+    };
+    sendToRoom(room.id, {
+      type: "player:shoot",
+      id: room.devBot.id,
+      origin: room.devBot.position,
+      weapon: room.devBot.weapon,
+      shots: [shot]
+    });
+  }, DEV_BOT_FIRE_INTERVAL_MS);
+}
+
+function stopDevBot(room) {
+  if (!room?.devBot?.timer) return;
+  clearInterval(room.devBot.timer);
+  room.devBot.timer = null;
 }
 
 function killAndScheduleRespawn(victimWs, killerWs = null) {
@@ -140,7 +217,7 @@ function killAndScheduleRespawn(victimWs, killerWs = null) {
 
     victimWs.meta.health = MAX_HEALTH;
     victimWs.meta.alive = true;
-    const spawn = getSpawnPosition(victimWs.meta.team);
+    const spawn = getSpawnPosition();
     victimWs.meta.lastPosition = spawn;
 
     victimWs.send(
@@ -234,7 +311,7 @@ wss.on("connection", (ws) => {
       ws.meta.team = team;
       ws.meta.health = MAX_HEALTH;
       ws.meta.alive = true;
-      const spawn = getSpawnPosition(team);
+      const spawn = getSpawnPosition();
       ws.meta.lastPosition = spawn;
       room.players.set(ws.meta.id, ws);
 
@@ -252,6 +329,7 @@ wss.on("connection", (ws) => {
       );
 
       sendRoomPlayers(room.id);
+      startDevBot(room);
 
       broadcastRoomList();
       return;
@@ -260,6 +338,7 @@ wss.on("connection", (ws) => {
     if (msg.type === "player:update" && ws.meta.roomId) {
       if (!ws.meta.alive) return;
       ws.meta.lastPosition = msg.position;
+      ws.meta.rotationY = Number(msg.rotationY) || 0;
       sendToRoom(ws.meta.roomId, {
         type: "player:update",
         id: ws.meta.id,
@@ -324,6 +403,7 @@ wss.on("connection", (ws) => {
       const room = rooms.get(ws.meta.roomId);
       room?.players.delete(ws.meta.id);
       if (room) {
+        if (room.players.size === 0) stopDevBot(room);
         sendRoomPlayers(room.id);
       }
       broadcastRoomList();

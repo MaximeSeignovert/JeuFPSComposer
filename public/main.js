@@ -32,6 +32,7 @@ const state = {
 };
 
 const BASE_FOV = 74;
+const PLAYER_NAME_STORAGE_KEY = "fps.playerName";
 const WEAPON_STATS = {
   shotgun: {
     label: "Fusil a pompe",
@@ -85,6 +86,32 @@ const hudHealth = document.getElementById("hudHealth");
 const respawnNotice = document.getElementById("respawnNotice");
 const canvas = document.getElementById("gameCanvas");
 
+function sanitizePlayerName(rawName) {
+  const cleaned = String(rawName || "").trim().slice(0, 20);
+  return cleaned || "Player";
+}
+
+function savePlayerName(name) {
+  try {
+    localStorage.setItem(PLAYER_NAME_STORAGE_KEY, sanitizePlayerName(name));
+  } catch {
+    // Ignore localStorage failures (private mode / quota)
+  }
+}
+
+function loadPlayerName() {
+  try {
+    return sanitizePlayerName(localStorage.getItem(PLAYER_NAME_STORAGE_KEY) || "Player");
+  } catch {
+    return "Player";
+  }
+}
+
+nameInput.value = loadPlayerName();
+nameInput.addEventListener("input", () => {
+  savePlayerName(nameInput.value);
+});
+
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
@@ -114,10 +141,20 @@ const floor = new THREE.Mesh(
 floor.rotation.x = -Math.PI / 2;
 scene.add(floor);
 const worldColliders = [floor];
+const staticBlockColliders = [];
+const playerCollisionRadius = 0.34;
+
+function addStaticWorldMesh(mesh, includePhysics = true) {
+  scene.add(mesh);
+  worldColliders.push(mesh);
+  if (includePhysics) {
+    staticBlockColliders.push(new THREE.Box3().setFromObject(mesh));
+  }
+}
 
 const mapConfig = {
-  platform: { width: 18, depth: 14, topY: 3.2, baseY: 1.6 },
-  ramp: { width: 6, depth: 6.2, topY: 3.2, baseY: 0, thickness: 0.45 }
+  platform: { width: 18, depth: 14, topY: 3.6, baseY: 1.8 },
+  ramp: { width: 6, depth: 6.2, topY: 3.6, baseY: 0, thickness: 0.4 }
 };
 
 const platform = new THREE.Mesh(
@@ -129,8 +166,7 @@ const platform = new THREE.Mesh(
   new THREE.MeshStandardMaterial({ color: 0xc8b07f, roughness: 0.72, metalness: 0.03 })
 );
 platform.position.set(0, mapConfig.platform.baseY, 0);
-scene.add(platform);
-worldColliders.push(platform);
+addStaticWorldMesh(platform);
 
 const platformTopMaterial = new THREE.MeshStandardMaterial({
   color: 0xe4d1a9,
@@ -143,8 +179,7 @@ const platformCap = new THREE.Mesh(
   platformTopMaterial
 );
 platformCap.position.set(0, mapConfig.platform.topY - 0.18, 0);
-scene.add(platformCap);
-worldColliders.push(platformCap);
+addStaticWorldMesh(platformCap);
 
 const rampRise = mapConfig.ramp.topY - mapConfig.ramp.baseY;
 const rampAngle = Math.atan2(rampRise, mapConfig.ramp.width);
@@ -161,14 +196,12 @@ leftRamp.position.set(
   0
 );
 leftRamp.rotation.z = rampAngle;
-scene.add(leftRamp);
-worldColliders.push(leftRamp);
+addStaticWorldMesh(leftRamp, false);
 
 const rightRamp = leftRamp.clone();
 rightRamp.position.x = mapConfig.platform.width / 2 + mapConfig.ramp.width / 2;
 rightRamp.rotation.z = -leftRamp.rotation.z;
-scene.add(rightRamp);
-worldColliders.push(rightRamp);
+addStaticWorldMesh(rightRamp, false);
 
 const coverMaterial = new THREE.MeshStandardMaterial({
   color: 0x4f80d9,
@@ -181,8 +214,7 @@ function addCoverBlock(x, z, width, height, depth, colorOffset = 0) {
   mat.color.offsetHSL(colorOffset, 0.05, 0.05);
   const block = new THREE.Mesh(new THREE.BoxGeometry(width, height, depth), mat);
   block.position.set(x, height / 2, z);
-  scene.add(block);
-  worldColliders.push(block);
+  addStaticWorldMesh(block);
 }
 
 function addTallPillar(x, z) {
@@ -191,8 +223,7 @@ function addTallPillar(x, z) {
     new THREE.MeshStandardMaterial({ color: 0xff6a6a, roughness: 0.76, metalness: 0.03 })
   );
   pillar.position.set(x, 2.6, z);
-  scene.add(pillar);
-  worldColliders.push(pillar);
+  addStaticWorldMesh(pillar);
 }
 
 [-1, 1].forEach((side) => {
@@ -211,13 +242,11 @@ addTallPillar(0, 24);
 const sideWallMaterial = new THREE.MeshStandardMaterial({ color: 0x8ec66b, roughness: 0.9 });
 const sideWallLeft = new THREE.Mesh(new THREE.BoxGeometry(2, 4, 85), sideWallMaterial);
 sideWallLeft.position.set(-42, 2, 0);
-scene.add(sideWallLeft);
-worldColliders.push(sideWallLeft);
+addStaticWorldMesh(sideWallLeft);
 
 const sideWallRight = sideWallLeft.clone();
 sideWallRight.position.x = 42;
-scene.add(sideWallRight);
-worldColliders.push(sideWallRight);
+addStaticWorldMesh(sideWallRight);
 
 const topRailMaterial = new THREE.MeshStandardMaterial({ color: 0xe94f7a, roughness: 0.84 });
 const topRailFront = new THREE.Mesh(
@@ -225,13 +254,11 @@ const topRailFront = new THREE.Mesh(
   topRailMaterial
 );
 topRailFront.position.set(0, mapConfig.platform.topY + 0.55, mapConfig.platform.depth / 2 - 0.7);
-scene.add(topRailFront);
-worldColliders.push(topRailFront);
+addStaticWorldMesh(topRailFront);
 
 const topRailBack = topRailFront.clone();
 topRailBack.position.z = -(mapConfig.platform.depth / 2 - 0.7);
-scene.add(topRailBack);
-worldColliders.push(topRailBack);
+addStaticWorldMesh(topRailBack);
 
 const localMaterial = new THREE.MeshStandardMaterial({ color: 0x45e0a8 });
 const remoteMeshes = new Map();
@@ -281,19 +308,22 @@ function createPlayerMesh(isLocal = false) {
 
   const shoeGeo = new THREE.BoxGeometry(0.14, 0.08, 0.22);
   const leftShoe = new THREE.Mesh(shoeGeo, shoeMaterial);
-  leftShoe.position.set(-0.13, 0.52, 0.04);
+  leftShoe.position.set(-0.13, 0.52, -0.04);
   root.add(leftShoe);
 
   const rightShoe = new THREE.Mesh(shoeGeo, shoeMaterial);
-  rightShoe.position.set(0.13, 0.52, 0.04);
+  rightShoe.position.set(0.13, 0.52, -0.04);
   root.add(rightShoe);
 
   const hitbox = new THREE.Mesh(
     new THREE.CapsuleGeometry(0.35, 1.1, 6, 10),
-    new THREE.MeshBasicMaterial({ visible: false })
+    new THREE.MeshBasicMaterial({
+      transparent: true,
+      opacity: 0,
+      depthWrite: false
+    })
   );
   hitbox.position.y = 1.2;
-  hitbox.visible = false;
   root.add(hitbox);
 
   const nameTag = createNameTagSprite("Player");
@@ -303,6 +333,7 @@ function createPlayerMesh(isLocal = false) {
   root.userData.hitbox = hitbox;
   root.userData.nameTag = nameTag;
   root.userData.materials = { shirtMaterial };
+  root.userData.groundOffset = 0.48;
   return root;
 }
 
@@ -423,6 +454,7 @@ const raycaster = new THREE.Raycaster();
 
 const clock = new THREE.Clock();
 let lastNetworkSend = 0;
+const smoothedMoveVelocity = new THREE.Vector3();
 
 function createViewModel() {
   const group = new THREE.Group();
@@ -577,8 +609,9 @@ function connect() {
   state.ws = new WebSocket(`${protocol}://${location.host}`);
 
   state.ws.addEventListener("open", () => {
+    savePlayerName(nameInput.value);
     state.ws.send(
-      JSON.stringify({ type: "player:setName", name: nameInput.value.trim() || "Player" })
+      JSON.stringify({ type: "player:setName", name: sanitizePlayerName(nameInput.value) })
     );
   });
 
@@ -630,7 +663,8 @@ function connect() {
         remotePlayer.root.userData.hitbox.userData.playerId = msg.id;
       }
       if (msg.position) {
-        remotePlayer.root.position.set(msg.position.x, msg.position.y, msg.position.z);
+        const groundOffset = Number(remotePlayer.root.userData.groundOffset) || 0;
+        remotePlayer.root.position.set(msg.position.x, msg.position.y - groundOffset, msg.position.z);
         remotePlayer.root.rotation.y = msg.rotationY || 0;
       }
       setRemoteAliveVisual(remotePlayer.root, msg.alive !== false);
@@ -706,7 +740,8 @@ function renderRooms(rooms) {
 
 function joinRoom(roomId) {
   if (!state.ws || state.ws.readyState !== WebSocket.OPEN) return;
-  state.ws.send(JSON.stringify({ type: "player:setName", name: nameInput.value.trim() || "Player" }));
+  savePlayerName(nameInput.value);
+  state.ws.send(JSON.stringify({ type: "player:setName", name: sanitizePlayerName(nameInput.value) }));
   state.ws.send(JSON.stringify({ type: "room:join", roomId }));
 }
 
@@ -791,6 +826,11 @@ function updatePlayerList(players) {
     remotePlayer.root.userData.playerId = p.id;
     if (remotePlayer.root.userData.hitbox) {
       remotePlayer.root.userData.hitbox.userData.playerId = p.id;
+    }
+    if (p.position) {
+      const groundOffset = Number(remotePlayer.root.userData.groundOffset) || 0;
+      remotePlayer.root.position.set(p.position.x, p.position.y - groundOffset, p.position.z);
+      remotePlayer.root.rotation.y = p.rotationY || 0;
     }
     updateNameTagSprite(remotePlayer.root.userData.nameTag, p.name || "Player", p.team || null);
     applyRemoteTeamStyle(remotePlayer.root, p.team);
@@ -891,7 +931,11 @@ resumeBtn.addEventListener("click", () => {
 });
 
 function updateMovement(delta) {
-  if (!state.joined || state.pauseOpen || !state.isAlive) return;
+  if (!state.joined || state.pauseOpen || !state.isAlive) {
+    smoothedMoveVelocity.set(0, 0, 0);
+    return;
+  }
+  const previousPos = camera.position.clone();
   const fwd = Number(state.keys.has("KeyW")) - Number(state.keys.has("KeyS"));
   const right = Number(state.keys.has("KeyD")) - Number(state.keys.has("KeyA"));
   const dir = new THREE.Vector3();
@@ -900,33 +944,77 @@ function updateMovement(delta) {
   dir.normalize();
   const side = new THREE.Vector3(-dir.z, 0, dir.x).normalize();
 
-  const velocity = new THREE.Vector3()
-    .addScaledVector(dir, fwd * state.moveSpeed * delta)
-    .addScaledVector(side, right * state.moveSpeed * delta);
-
-  camera.position.add(velocity);
+  const targetVelocity = new THREE.Vector3()
+    .addScaledVector(dir, fwd * state.moveSpeed)
+    .addScaledVector(side, right * state.moveSpeed);
+  const hasInput = fwd !== 0 || right !== 0;
+  const smoothing = Math.min(delta * (hasInput ? 14 : 10), 1);
+  smoothedMoveVelocity.lerp(targetVelocity, smoothing);
+  camera.position.addScaledVector(smoothedMoveVelocity, delta);
 
   state.verticalVelocity -= state.gravity * delta;
   camera.position.y += state.verticalVelocity * delta;
 
-  const groundHeight = getGroundHeightAt(camera.position.x, camera.position.z);
+  const feetY = camera.position.y - state.playerHeight;
+  const groundHeight = getGroundHeightAt(camera.position.x, camera.position.z, feetY);
   const minY = state.playerHeight + groundHeight;
   if (camera.position.y <= minY) {
     camera.position.y = minY;
     state.verticalVelocity = 0;
     state.onGround = true;
   }
+  resolveHorizontalCollisions(previousPos);
 
   const lim = 90;
   camera.position.x = THREE.MathUtils.clamp(camera.position.x, -lim, lim);
   camera.position.z = THREE.MathUtils.clamp(camera.position.z, -lim, lim);
 
-  const horizontalSpeed = velocity.length() / Math.max(delta, 0.0001);
+  const horizontalSpeed = smoothedMoveVelocity.length();
   const isMoving = horizontalSpeed > 0.3 ? 1 : 0;
   state.movementBlend = THREE.MathUtils.lerp(state.movementBlend, isMoving, Math.min(delta * 12, 1));
 }
 
-function getGroundHeightAt(x, z) {
+function resolveHorizontalCollisions(previousPos) {
+  const playerBottom = camera.position.y - state.playerHeight;
+  const playerTop = camera.position.y + 0.25;
+
+  for (const box of staticBlockColliders) {
+    if (playerTop <= box.min.y || playerBottom >= box.max.y) continue;
+
+    const closestX = THREE.MathUtils.clamp(camera.position.x, box.min.x, box.max.x);
+    const closestZ = THREE.MathUtils.clamp(camera.position.z, box.min.z, box.max.z);
+    const deltaX = camera.position.x - closestX;
+    const deltaZ = camera.position.z - closestZ;
+    const distSq = deltaX * deltaX + deltaZ * deltaZ;
+    const radiusSq = playerCollisionRadius * playerCollisionRadius;
+    if (distSq >= radiusSq) continue;
+
+    if (distSq > 0.000001) {
+      const dist = Math.sqrt(distSq);
+      const push = playerCollisionRadius - dist;
+      camera.position.x += (deltaX / dist) * push;
+      camera.position.z += (deltaZ / dist) * push;
+      continue;
+    }
+
+    const penetrationX = Math.min(
+      Math.abs(camera.position.x - box.min.x),
+      Math.abs(box.max.x - camera.position.x)
+    );
+    const penetrationZ = Math.min(
+      Math.abs(camera.position.z - box.min.z),
+      Math.abs(box.max.z - camera.position.z)
+    );
+    if (penetrationX < penetrationZ) {
+      camera.position.x = previousPos.x < camera.position.x ? box.max.x + playerCollisionRadius : box.min.x - playerCollisionRadius;
+    } else {
+      camera.position.z = previousPos.z < camera.position.z ? box.max.z + playerCollisionRadius : box.min.z - playerCollisionRadius;
+    }
+  }
+}
+
+function getGroundHeightAt(x, z, feetY = 0) {
+  const rampSnapTolerance = 0.35;
   const halfPlatformW = mapConfig.platform.width / 2;
   const halfPlatformD = mapConfig.platform.depth / 2;
   const halfRampD = mapConfig.ramp.depth / 2;
@@ -939,11 +1027,12 @@ function getGroundHeightAt(x, z) {
   const leftCenterX = -(halfPlatformW + halfRampW);
   if (x >= leftCenterX - halfRampW && x <= leftCenterX + halfRampW && Math.abs(z) <= halfRampD) {
     const localX = x - (leftCenterX - halfRampW);
-    return THREE.MathUtils.clamp(
+    const rampHeight = THREE.MathUtils.clamp(
       (localX / mapConfig.ramp.width) * mapConfig.ramp.topY,
       mapConfig.ramp.baseY,
       mapConfig.ramp.topY
     );
+    return feetY >= rampHeight - rampSnapTolerance ? rampHeight : 0;
   }
 
   const rightCenterX = halfPlatformW + halfRampW;
@@ -953,11 +1042,12 @@ function getGroundHeightAt(x, z) {
     Math.abs(z) <= halfRampD
   ) {
     const localX = rightCenterX + halfRampW - x;
-    return THREE.MathUtils.clamp(
+    const rampHeight = THREE.MathUtils.clamp(
       (localX / mapConfig.ramp.width) * mapConfig.ramp.topY,
       mapConfig.ramp.baseY,
       mapConfig.ramp.topY
     );
+    return feetY >= rampHeight - rampSnapTolerance ? rampHeight : 0;
   }
 
   return 0;
@@ -1028,7 +1118,8 @@ function shoot() {
   const muzzle = viewModel.userData.activeMuzzle || viewModel.userData.muzzle;
   const spawnPos = new THREE.Vector3();
   muzzle.getWorldPosition(spawnPos);
-  const origin = { x: spawnPos.x, y: spawnPos.y, z: spawnPos.z };
+  const muzzleOrigin = { x: spawnPos.x, y: spawnPos.y, z: spawnPos.z };
+  const aimOrigin = { x: camera.position.x, y: camera.position.y, z: camera.position.z };
   const baseDirection = new THREE.Vector3();
   camera.getWorldDirection(baseDirection).normalize();
   const shots = [];
@@ -1047,16 +1138,16 @@ function shoot() {
       range: stats.range,
       bulletSpeed: stats.bulletSpeed
     });
-    spawnBulletVisual(origin, direction, true, stats.bulletSpeed);
-    traceImpact(origin, direction, stats.range, true, stats.damage);
+    spawnBulletVisual(muzzleOrigin, direction, true, stats.bulletSpeed);
+    traceImpact(aimOrigin, direction, stats.range, true, stats.damage);
   }
-  spawnMuzzleFlash(origin);
+  spawnMuzzleFlash(muzzleOrigin);
 
   if (state.ws && state.ws.readyState === WebSocket.OPEN) {
     state.ws.send(
       JSON.stringify({
         type: "player:shoot",
-        origin,
+        origin: aimOrigin,
         weapon: state.weapon,
         shots
       })
