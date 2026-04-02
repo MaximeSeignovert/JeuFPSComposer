@@ -133,22 +133,22 @@ function createViewModel() {
   group.add(sleeve);
 
   const weaponBody = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.14, 0.74), weaponMaterial);
-  weaponBody.position.set(0.07, -0.22, -0.26);
+  weaponBody.position.set(-0.03, -0.19, -0.3);
   weaponBody.rotation.y = -0.04;
   group.add(weaponBody);
 
   const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.032, 0.62, 12), weaponAccent);
   barrel.rotation.x = Math.PI / 2;
-  barrel.position.set(0.08, -0.2, -0.62);
+  barrel.position.set(-0.02, -0.18, -0.66);
   group.add(barrel);
 
   const grip = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.2, 0.08), weaponMaterial);
-  grip.position.set(0.03, -0.33, -0.09);
+  grip.position.set(-0.06, -0.29, -0.13);
   grip.rotation.z = 0.18;
   group.add(grip);
 
   const muzzle = new THREE.Object3D();
-  muzzle.position.set(0.08, -0.2, -0.93);
+  muzzle.position.set(-0.02, -0.18, -0.96);
   group.add(muzzle);
   group.userData.muzzle = muzzle;
 
@@ -314,6 +314,13 @@ document.addEventListener("mousemove", (e) => {
   state.pitch -= e.movementY * 0.002;
   state.pitch = Math.max(-1.4, Math.min(1.4, state.pitch));
 });
+document.addEventListener("pointerlockchange", () => {
+  if (!state.joined) return;
+  const lockedOnCanvas = document.pointerLockElement === canvas;
+  if (!lockedOnCanvas && !state.pauseOpen) {
+    setPauseMenu(true);
+  }
+});
 
 canvas.addEventListener("click", () => {
   if (state.joined && !state.pauseOpen && document.pointerLockElement !== canvas) {
@@ -332,7 +339,10 @@ canvas.addEventListener("mouseup", (event) => {
 window.addEventListener("blur", () => {
   state.isFiring = false;
 });
-resumeBtn.addEventListener("click", () => setPauseMenu(false));
+resumeBtn.addEventListener("click", () => {
+  setPauseMenu(false);
+  canvas.requestPointerLock();
+});
 
 function updateMovement(delta) {
   if (!state.joined || state.pauseOpen) return;
