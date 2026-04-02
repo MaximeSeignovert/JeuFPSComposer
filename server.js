@@ -13,6 +13,8 @@ const PORT = Number(process.env.PORT || DEFAULT_PORT);
 const MAX_ROOMS = 6;
 const ROOM_SIZE = 10;
 const TEAM_SIZE = 5;
+const MAX_HEALTH = 100;
+const RESPAWN_DELAY_MS = 3200;
 const rooms = new Map();
 
 app.use(express.static(path.join(__dirname, "public")));
@@ -76,13 +78,106 @@ function pickTeam(room) {
   return null;
 }
 
+function getSpawnPosition(team) {
+  const z = (Math.random() - 0.5) * 28;
+  const xBase = team === "alpha" ? -22 : 22;
+  const x = xBase + (Math.random() - 0.5) * 6;
+  return { x, y: 0, z };
+}
+
+function roomPlayersPayload(room) {
+  return Array.from(room.players.values()).map((pws) => ({
+    id: pws.meta.id,
+    name: pws.meta.name,
+    team: pws.meta.team,
+    weapon: pws.meta.weapon,
+    health: pws.meta.health,
+    alive: pws.meta.alive,
+    kills: pws.meta.kills,
+    deaths: pws.meta.deaths
+  }));
+}
+
+function sendRoomPlayers(roomId) {
+  const room = rooms.get(roomId);
+  if (!room) return;
+  sendToRoom(roomId, {
+    type: "room:players",
+    players: roomPlayersPayload(room)
+  });
+}
+
+function killAndScheduleRespawn(victimWs, killerWs = null) {
+  if (!victimWs?.meta?.roomId) return;
+  const room = rooms.get(victimWs.meta.roomId);
+  if (!room) return;
+  if (!victimWs.meta.alive) return;
+
+  victimWs.meta.health = 0;
+  victimWs.meta.alive = false;
+  victimWs.meta.deaths += 1;
+
+  if (killerWs?.meta?.id && killerWs.meta.id !== victimWs.meta.id) {
+    killerWs.meta.kills += 1;
+  }
+
+  sendToRoom(room.id, {
+    type: "player:died",
+    id: victimWs.meta.id,
+    killerId: killerWs?.meta?.id || null,
+    killerName: killerWs?.meta?.name || null
+  });
+  sendRoomPlayers(room.id);
+
+  if (victimWs.meta.respawnTimer) {
+    clearTimeout(victimWs.meta.respawnTimer);
+  }
+  victimWs.meta.respawnTimer = setTimeout(() => {
+    if (victimWs.readyState !== WebSocket.OPEN) return;
+    if (!victimWs.meta.roomId) return;
+    const currentRoom = rooms.get(victimWs.meta.roomId);
+    if (!currentRoom || !currentRoom.players.has(victimWs.meta.id)) return;
+
+    victimWs.meta.health = MAX_HEALTH;
+    victimWs.meta.alive = true;
+    const spawn = getSpawnPosition(victimWs.meta.team);
+    victimWs.meta.lastPosition = spawn;
+
+    victimWs.send(
+      JSON.stringify({
+        type: "player:respawn",
+        health: victimWs.meta.health,
+        alive: victimWs.meta.alive,
+        spawn
+      })
+    );
+    sendToRoom(currentRoom.id, {
+      type: "player:update",
+      id: victimWs.meta.id,
+      name: victimWs.meta.name,
+      team: victimWs.meta.team,
+      weapon: victimWs.meta.weapon,
+      health: victimWs.meta.health,
+      alive: victimWs.meta.alive,
+      position: spawn,
+      rotationY: 0
+    });
+    sendRoomPlayers(currentRoom.id);
+  }, RESPAWN_DELAY_MS);
+}
+
 wss.on("connection", (ws) => {
   ws.meta = {
     id: `${Date.now()}-${Math.floor(Math.random() * 10000)}`,
     name: "Player",
     roomId: null,
     team: null,
-    weapon: "ak47"
+    weapon: "ak47",
+    health: MAX_HEALTH,
+    alive: true,
+    kills: 0,
+    deaths: 0,
+    respawnTimer: null
   };
 
   ws.send(
@@ -109,15 +204,11 @@ wss.on("connection", (ws) => {
       const allowed = new Set(["shotgun", "sniper", "ak47"]);
       if (allowed.has(msg.weapon)) ws.meta.weapon = msg.weapon;
       if (ws.meta.roomId) {
-        sendToRoom(ws.meta.roomId, {
-          type: "room:players",
-          players: Array.from(rooms.get(ws.meta.roomId)?.players.values() || []).map((pws) => ({
-            id: pws.meta.id,
-            name: pws.meta.name,
-            team: pws.meta.team,
-            weapon: pws.meta.weapon
-          }))
-        });
+        if (ws.meta.alive) {
+          killAndScheduleRespawn(ws, null);
+        } else {
+          sendRoomPlayers(ws.meta.roomId);
+        }
       }
       return;
     }
@@ -141,6 +232,10 @@ wss.on("connection", (ws) => {
 
       ws.meta.roomId = room.id;
       ws.meta.team = team;
+      ws.meta.health = MAX_HEALTH;
+      ws.meta.alive = true;
+      const spawn = getSpawnPosition(team);
+      ws.meta.lastPosition = spawn;
       room.players.set(ws.meta.id, ws);
 
       ws.send(
@@ -149,31 +244,30 @@ wss.on("connection", (ws) => {
           id: ws.meta.id,
           roomId: room.id,
           team,
-          weapon: ws.meta.weapon
+          weapon: ws.meta.weapon,
+          health: ws.meta.health,
+          alive: ws.meta.alive,
+          spawn
         })
       );
 
-      sendToRoom(room.id, {
-        type: "room:players",
-        players: Array.from(room.players.values()).map((pws) => ({
-          id: pws.meta.id,
-          name: pws.meta.name,
-          team: pws.meta.team,
-          weapon: pws.meta.weapon
-        }))
-      });
+      sendRoomPlayers(room.id);
 
       broadcastRoomList();
       return;
     }
 
     if (msg.type === "player:update" && ws.meta.roomId) {
+      if (!ws.meta.alive) return;
+      ws.meta.lastPosition = msg.position;
       sendToRoom(ws.meta.roomId, {
         type: "player:update",
         id: ws.meta.id,
         name: ws.meta.name,
         team: ws.meta.team,
         weapon: ws.meta.weapon,
+        health: ws.meta.health,
+        alive: ws.meta.alive,
         position: msg.position,
         rotationY: msg.rotationY
       });
@@ -189,23 +283,48 @@ wss.on("connection", (ws) => {
         weapon: ws.meta.weapon,
         shots: msg.shots
       });
+      return;
+    }
+
+    if (msg.type === "player:hit" && ws.meta.roomId) {
+      const room = rooms.get(ws.meta.roomId);
+      if (!room || !ws.meta.alive) return;
+      const targetId = String(msg.targetId || "");
+      const rawDamage = Number(msg.damage);
+      if (!targetId || !Number.isFinite(rawDamage)) return;
+      const damage = Math.max(1, Math.min(200, rawDamage));
+      const targetWs = room.players.get(targetId);
+      if (!targetWs || !targetWs.meta.alive) return;
+      if (targetWs.meta.team === ws.meta.team) return;
+
+      targetWs.meta.health = Math.max(0, targetWs.meta.health - damage);
+      if (targetWs.readyState === WebSocket.OPEN) {
+        targetWs.send(
+          JSON.stringify({
+            type: "player:health",
+            health: targetWs.meta.health
+          })
+        );
+      }
+
+      if (targetWs.meta.health > 0) {
+        sendRoomPlayers(room.id);
+        return;
+      }
+      killAndScheduleRespawn(targetWs, ws);
     }
   });
 
   ws.on("close", () => {
+    if (ws.meta.respawnTimer) {
+      clearTimeout(ws.meta.respawnTimer);
+      ws.meta.respawnTimer = null;
+    }
     if (ws.meta.roomId) {
       const room = rooms.get(ws.meta.roomId);
       room?.players.delete(ws.meta.id);
       if (room) {
-        sendToRoom(room.id, {
-          type: "room:players",
-          players: Array.from(room.players.values()).map((pws) => ({
-            id: pws.meta.id,
-            name: pws.meta.name,
-            team: pws.meta.team,
-            weapon: pws.meta.weapon
-          }))
-        });
+        sendRoomPlayers(room.id);
       }
       broadcastRoomList();
     }

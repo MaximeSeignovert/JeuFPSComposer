@@ -25,12 +25,14 @@
         <div class="hud-left">
           <strong id="hudRoom">Room ?</strong>
           <span id="hudTeam">Equipe ?</span>
+          <span id="hudHealth">Vie: 100</span>
         </div>
         <div class="hud-right">
           <span id="hudWeapon">Arme: AK47</span>
           <span>WASD + Souris</span>
         </div>
       </section>
+      <section id="respawnNotice" class="respawn-notice hidden"></section>
       <section id="pauseMenu" class="pause-menu hidden">
         <h3>Menu pause</h3>
         <p class="subtitle">Appuie sur Echap pour ouvrir/fermer ce menu.</p>
@@ -46,6 +48,10 @@
       </section>
 
       <section id="crosshair" class="crosshair hidden">+</section>
+      <section id="sniperScope" class="sniper-scope hidden">
+        <div class="scope-ring"></div>
+        <div class="scope-crosshair"></div>
+      </section>
       <section id="playerList" class="player-list hidden"></section>
       <canvas id="gameCanvas"></canvas>
     </main>

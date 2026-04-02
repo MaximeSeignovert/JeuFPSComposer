@@ -23,6 +23,10 @@ const state = {
   lastShotAt: 0,
   isFiring: false,
   isAiming: false,
+  health: 100,
+  isAlive: true,
+  respawnUntil: 0,
+  respawnDelayMs: 3200,
   joined: false,
   pauseOpen: false
 };
@@ -72,10 +76,13 @@ const pauseMenu = document.getElementById("pauseMenu");
 const resumeBtn = document.getElementById("resumeBtn");
 const hud = document.getElementById("hud");
 const crosshair = document.getElementById("crosshair");
+const sniperScope = document.getElementById("sniperScope");
 const playerList = document.getElementById("playerList");
 const hudRoom = document.getElementById("hudRoom");
 const hudTeam = document.getElementById("hudTeam");
 const hudWeapon = document.getElementById("hudWeapon");
+const hudHealth = document.getElementById("hudHealth");
+const respawnNotice = document.getElementById("respawnNotice");
 const canvas = document.getElementById("gameCanvas");
 
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -83,8 +90,8 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x111823);
-scene.fog = new THREE.Fog(0x111823, 25, 90);
+scene.background = new THREE.Color(0x8fd3ff);
+scene.fog = new THREE.Fog(0xaedfff, 55, 180);
 
 const camera = new THREE.PerspectiveCamera(BASE_FOV, window.innerWidth / window.innerHeight, 0.1, 1000);
 camera.position.set(0, state.playerHeight, 0);
@@ -94,32 +101,137 @@ const viewModel = createViewModel();
 camera.add(viewModel);
 setActiveWeaponModel(state.weapon);
 
-const hemi = new THREE.HemisphereLight(0xa2c2ff, 0x203040, 1.1);
+const hemi = new THREE.HemisphereLight(0xc7ebff, 0x6a8f4c, 1.25);
 scene.add(hemi);
-const dir = new THREE.DirectionalLight(0xffffff, 0.8);
-dir.position.set(7, 20, 9);
+const dir = new THREE.DirectionalLight(0xfff3d1, 1.15);
+dir.position.set(18, 30, 14);
 scene.add(dir);
 
 const floor = new THREE.Mesh(
   new THREE.PlaneGeometry(200, 200),
-  new THREE.MeshStandardMaterial({ color: 0x1a2738, roughness: 0.95 })
+  new THREE.MeshStandardMaterial({ color: 0x7fbf65, roughness: 0.95 })
 );
 floor.rotation.x = -Math.PI / 2;
 scene.add(floor);
 const worldColliders = [floor];
 
-for (let i = 0; i < 26; i += 1) {
-  const wall = new THREE.Mesh(
-    new THREE.BoxGeometry(3, 4, 3),
-    new THREE.MeshStandardMaterial({
-      color: i % 2 ? 0x2a466f : 0x3e5c8a,
-      roughness: 0.8
-    })
-  );
-  wall.position.set((Math.random() - 0.5) * 70, 2, (Math.random() - 0.5) * 70);
-  scene.add(wall);
-  worldColliders.push(wall);
+const mapConfig = {
+  platform: { width: 18, depth: 14, topY: 3.2, baseY: 1.6 },
+  ramp: { width: 6, depth: 6.2, topY: 3.2, baseY: 0, thickness: 0.45 }
+};
+
+const platform = new THREE.Mesh(
+  new THREE.BoxGeometry(
+    mapConfig.platform.width,
+    mapConfig.platform.baseY * 2,
+    mapConfig.platform.depth
+  ),
+  new THREE.MeshStandardMaterial({ color: 0xc8b07f, roughness: 0.72, metalness: 0.03 })
+);
+platform.position.set(0, mapConfig.platform.baseY, 0);
+scene.add(platform);
+worldColliders.push(platform);
+
+const platformTopMaterial = new THREE.MeshStandardMaterial({
+  color: 0xe4d1a9,
+  roughness: 0.68,
+  metalness: 0.04
+});
+
+const platformCap = new THREE.Mesh(
+  new THREE.BoxGeometry(mapConfig.platform.width - 0.6, 0.36, mapConfig.platform.depth - 0.6),
+  platformTopMaterial
+);
+platformCap.position.set(0, mapConfig.platform.topY - 0.18, 0);
+scene.add(platformCap);
+worldColliders.push(platformCap);
+
+const rampRise = mapConfig.ramp.topY - mapConfig.ramp.baseY;
+const rampAngle = Math.atan2(rampRise, mapConfig.ramp.width);
+const rampLength = Math.hypot(mapConfig.ramp.width, rampRise);
+const rampGeometry = new THREE.BoxGeometry(rampLength, mapConfig.ramp.thickness, mapConfig.ramp.depth);
+
+const leftRamp = new THREE.Mesh(
+  rampGeometry,
+  new THREE.MeshStandardMaterial({ color: 0xffc74d, roughness: 0.72, metalness: 0.02 })
+);
+leftRamp.position.set(
+  -(mapConfig.platform.width / 2 + mapConfig.ramp.width / 2),
+  (mapConfig.ramp.topY + mapConfig.ramp.baseY) / 2 + mapConfig.ramp.thickness * 0.25,
+  0
+);
+leftRamp.rotation.z = rampAngle;
+scene.add(leftRamp);
+worldColliders.push(leftRamp);
+
+const rightRamp = leftRamp.clone();
+rightRamp.position.x = mapConfig.platform.width / 2 + mapConfig.ramp.width / 2;
+rightRamp.rotation.z = -leftRamp.rotation.z;
+scene.add(rightRamp);
+worldColliders.push(rightRamp);
+
+const coverMaterial = new THREE.MeshStandardMaterial({
+  color: 0x4f80d9,
+  roughness: 0.8,
+  metalness: 0.02
+});
+
+function addCoverBlock(x, z, width, height, depth, colorOffset = 0) {
+  const mat = coverMaterial.clone();
+  mat.color.offsetHSL(colorOffset, 0.05, 0.05);
+  const block = new THREE.Mesh(new THREE.BoxGeometry(width, height, depth), mat);
+  block.position.set(x, height / 2, z);
+  scene.add(block);
+  worldColliders.push(block);
 }
+
+function addTallPillar(x, z) {
+  const pillar = new THREE.Mesh(
+    new THREE.BoxGeometry(2.2, 5.2, 2.2),
+    new THREE.MeshStandardMaterial({ color: 0xff6a6a, roughness: 0.76, metalness: 0.03 })
+  );
+  pillar.position.set(x, 2.6, z);
+  scene.add(pillar);
+  worldColliders.push(pillar);
+}
+
+[-1, 1].forEach((side) => {
+  const x = side * 30;
+  addCoverBlock(x, -24, 5.4, 2.6, 3.4, 0.02);
+  addCoverBlock(x, -8, 3.8, 2.2, 3.2, -0.08);
+  addCoverBlock(x, 8, 3.8, 2.2, 3.2, 0.1);
+  addCoverBlock(x, 24, 5.4, 2.6, 3.4, -0.12);
+  addCoverBlock(side * 22, -16, 3.2, 1.6, 2.8, 0.16);
+  addCoverBlock(side * 22, 16, 3.2, 1.6, 2.8, -0.18);
+});
+
+addTallPillar(0, -24);
+addTallPillar(0, 24);
+
+const sideWallMaterial = new THREE.MeshStandardMaterial({ color: 0x8ec66b, roughness: 0.9 });
+const sideWallLeft = new THREE.Mesh(new THREE.BoxGeometry(2, 4, 85), sideWallMaterial);
+sideWallLeft.position.set(-42, 2, 0);
+scene.add(sideWallLeft);
+worldColliders.push(sideWallLeft);
+
+const sideWallRight = sideWallLeft.clone();
+sideWallRight.position.x = 42;
+scene.add(sideWallRight);
+worldColliders.push(sideWallRight);
+
+const topRailMaterial = new THREE.MeshStandardMaterial({ color: 0xe94f7a, roughness: 0.84 });
+const topRailFront = new THREE.Mesh(
+  new THREE.BoxGeometry(mapConfig.platform.width + 1, 1.1, 1.4),
+  topRailMaterial
+);
+topRailFront.position.set(0, mapConfig.platform.topY + 0.55, mapConfig.platform.depth / 2 - 0.7);
+scene.add(topRailFront);
+worldColliders.push(topRailFront);
+
+const topRailBack = topRailFront.clone();
+topRailBack.position.z = -(mapConfig.platform.depth / 2 - 0.7);
+scene.add(topRailBack);
+worldColliders.push(topRailBack);
 
 const localMaterial = new THREE.MeshStandardMaterial({ color: 0x45e0a8 });
 const remoteMeshes = new Map();
@@ -207,7 +319,8 @@ function createNameTagSprite(name) {
   const spriteMaterial = new THREE.SpriteMaterial({
     map: texture,
     transparent: true,
-    depthTest: false
+    depthTest: true,
+    depthWrite: false
   });
   const sprite = new THREE.Sprite(spriteMaterial);
   sprite.scale.set(1.9, 0.46, 1);
@@ -270,6 +383,36 @@ function applyRemoteTeamStyle(root, team) {
   else shirtMaterial.color.setHex(0x4f8cf6);
 }
 
+function setRemoteAliveVisual(root, alive) {
+  if (!root) return;
+  root.visible = alive !== false;
+}
+
+function updateHealthHud() {
+  hudHealth.textContent = `Vie: ${Math.max(0, Math.round(state.health))}`;
+  hudHealth.style.color = state.health <= 25 ? "#ff607f" : state.health <= 55 ? "#ffbf66" : "";
+}
+
+function setLocalAlive(alive) {
+  state.isAlive = Boolean(alive);
+  if (!state.isAlive) {
+    state.isFiring = false;
+    state.isAiming = false;
+    sniperScope.classList.add("hidden");
+  }
+}
+
+function updateRespawnNotice() {
+  if (!state.joined || state.isAlive) {
+    respawnNotice.classList.add("hidden");
+    return;
+  }
+  const left = Math.max(0, state.respawnUntil - performance.now());
+  const seconds = Math.ceil(left / 1000);
+  respawnNotice.textContent = `Vous etes mort. Respawn dans ${seconds}s...`;
+  respawnNotice.classList.remove("hidden");
+}
+
 const localBody = createPlayerMesh(true);
 localBody.visible = false;
 scene.add(localBody);
@@ -312,22 +455,48 @@ function createViewModel() {
   group.add(sleeve);
 
   const ak47 = new THREE.Group();
-  const akBody = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.14, 0.74), metalDark);
-  akBody.position.set(-0.03, -0.19, -0.3);
-  akBody.rotation.y = -0.04;
-  ak47.add(akBody);
-  const akBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, 0.62, 12), metalAccent);
+  const akReceiver = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.15, 0.52), metalDark);
+  akReceiver.position.set(-0.03, -0.19, -0.27);
+  akReceiver.rotation.y = -0.035;
+  ak47.add(akReceiver);
+  const akDustCover = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.05, 0.34), metalAccent);
+  akDustCover.position.set(-0.03, -0.11, -0.27);
+  akDustCover.rotation.y = -0.03;
+  ak47.add(akDustCover);
+  const akFrontBlock = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 0.12), metalAccent);
+  akFrontBlock.position.set(-0.02, -0.16, -0.58);
+  ak47.add(akFrontBlock);
+  const akBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.66, 14), metalAccent);
   akBarrel.rotation.x = Math.PI / 2;
-  akBarrel.position.set(-0.02, -0.18, -0.66);
+  akBarrel.position.set(-0.02, -0.18, -0.78);
   ak47.add(akBarrel);
-  const akGrip = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.2, 0.08), metalDark);
-  akGrip.position.set(-0.06, -0.29, -0.13);
-  akGrip.rotation.z = 0.18;
+  const akMuzzleBrake = new THREE.Mesh(new THREE.CylinderGeometry(0.021, 0.021, 0.05, 12), metalDark);
+  akMuzzleBrake.rotation.x = Math.PI / 2;
+  akMuzzleBrake.position.set(-0.02, -0.18, -1.11);
+  ak47.add(akMuzzleBrake);
+  const akGasTube = new THREE.Mesh(new THREE.CylinderGeometry(0.011, 0.011, 0.42, 10), metalAccent);
+  akGasTube.rotation.x = Math.PI / 2;
+  akGasTube.position.set(-0.02, -0.13, -0.66);
+  ak47.add(akGasTube);
+  const akHandguard = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.09, 0.28), woodMaterial);
+  akHandguard.position.set(-0.02, -0.2, -0.54);
+  ak47.add(akHandguard);
+  const akGrip = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.2, 0.08), woodMaterial);
+  akGrip.position.set(-0.07, -0.31, -0.12);
+  akGrip.rotation.z = 0.23;
   ak47.add(akGrip);
-  const akMagazine = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.26, 0.1), metalDark);
-  akMagazine.position.set(-0.02, -0.33, -0.21);
-  akMagazine.rotation.z = -0.16;
+  const akMagazine = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.27, 0.11), metalDark);
+  akMagazine.position.set(-0.01, -0.34, -0.23);
+  akMagazine.rotation.z = -0.26;
+  akMagazine.rotation.x = 0.06;
   ak47.add(akMagazine);
+  const akStock = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.12, 0.26), woodMaterial);
+  akStock.position.set(-0.04, -0.23, 0.08);
+  akStock.rotation.x = -0.2;
+  ak47.add(akStock);
+  const akRearSight = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.025, 0.045), metalAccent);
+  akRearSight.position.set(-0.03, -0.09, -0.12);
+  ak47.add(akRearSight);
 
   const shotgun = new THREE.Group();
   shotgun.position.set(-0.015, -0.005, 0.01);
@@ -372,7 +541,7 @@ function createViewModel() {
   group.add(sniper);
 
   const muzzleAk = new THREE.Object3D();
-  muzzleAk.position.set(-0.02, -0.18, -0.98);
+  muzzleAk.position.set(-0.02, -0.18, -1.15);
   ak47.add(muzzleAk);
 
   const muzzleShotgun = new THREE.Object3D();
@@ -427,6 +596,11 @@ function connect() {
       state.roomId = msg.roomId;
       state.team = msg.team;
       state.weapon = msg.weapon;
+      state.health = Number(msg.health) || 100;
+      setLocalAlive(msg.alive !== false);
+      if (msg.spawn) {
+        camera.position.set(msg.spawn.x, state.playerHeight + getGroundHeightAt(msg.spawn.x, msg.spawn.z), msg.spawn.z);
+      }
       setActiveWeaponModel(state.weapon);
       weaponChoice.querySelectorAll("button").forEach((b) => {
         b.classList.toggle("active", b.getAttribute("data-weapon") === state.weapon);
@@ -450,15 +624,53 @@ function connect() {
         remotePlayer = { root };
         remoteMeshes.set(msg.id, remotePlayer);
       }
+      remotePlayer.id = msg.id;
+      remotePlayer.root.userData.playerId = msg.id;
+      if (remotePlayer.root.userData.hitbox) {
+        remotePlayer.root.userData.hitbox.userData.playerId = msg.id;
+      }
       if (msg.position) {
-        remotePlayer.root.position.set(msg.position.x, msg.position.y - 0.5, msg.position.z);
+        remotePlayer.root.position.set(msg.position.x, msg.position.y, msg.position.z);
         remotePlayer.root.rotation.y = msg.rotationY || 0;
       }
+      setRemoteAliveVisual(remotePlayer.root, msg.alive !== false);
       if (msg.name || msg.team) {
         const nameTag = remotePlayer.root.userData.nameTag;
         updateNameTagSprite(nameTag, msg.name || "Player", msg.team || null);
         applyRemoteTeamStyle(remotePlayer.root, msg.team);
       }
+      return;
+    }
+
+    if (msg.type === "player:health") {
+      state.health = Number(msg.health) || 0;
+      updateHealthHud();
+      return;
+    }
+
+    if (msg.type === "player:died") {
+      if (msg.id === state.playerId) {
+        setLocalAlive(false);
+        state.respawnUntil = performance.now() + state.respawnDelayMs;
+      } else {
+        const remotePlayer = remoteMeshes.get(msg.id);
+        if (remotePlayer) setRemoteAliveVisual(remotePlayer.root, false);
+      }
+      return;
+    }
+
+    if (msg.type === "player:respawn") {
+      if (msg.spawn) {
+        camera.position.set(
+          msg.spawn.x,
+          state.playerHeight + getGroundHeightAt(msg.spawn.x, msg.spawn.z),
+          msg.spawn.z
+        );
+      }
+      state.health = Number(msg.health) || 100;
+      state.respawnUntil = 0;
+      setLocalAlive(msg.alive !== false);
+      updateHealthHud();
       return;
     }
 
@@ -471,7 +683,7 @@ function connect() {
         const range = Number(shot.range) || 80;
         const bulletSpeed = Number(shot.bulletSpeed) || 68;
         spawnBulletVisual(msg.origin, shot.direction, false, bulletSpeed);
-        traceImpact(msg.origin, shot.direction, range);
+        traceImpact(msg.origin, shot.direction, range, false, 0);
       });
     }
   });
@@ -507,6 +719,8 @@ function enterGame() {
   hudRoom.textContent = state.roomId;
   hudTeam.textContent = `Equipe: ${state.team.toUpperCase()}`;
   hudWeapon.textContent = `Arme: ${weaponLabel(state.weapon)}`;
+  updateHealthHud();
+  updateRespawnNotice();
 }
 
 function setPauseMenu(open) {
@@ -514,6 +728,7 @@ function setPauseMenu(open) {
   state.pauseOpen = open;
   pauseMenu.classList.toggle("hidden", !open);
   crosshair.classList.toggle("hidden", open);
+  sniperScope.classList.add("hidden");
   if (open) {
     state.keys.clear();
     state.isFiring = false;
@@ -538,13 +753,24 @@ function getWeaponStats(weapon = state.weapon) {
 
 function updateZoomState() {
   const stats = getWeaponStats();
-  const shouldZoom = state.isAiming && state.weapon === "sniper" && !state.pauseOpen;
+  const shouldZoom =
+    state.joined && state.isAlive && state.isAiming && state.weapon === "sniper" && !state.pauseOpen;
   const targetFov = shouldZoom ? stats.zoomFov : BASE_FOV;
   camera.fov = THREE.MathUtils.lerp(camera.fov, targetFov, 0.2);
   camera.updateProjectionMatrix();
+  sniperScope.classList.toggle("hidden", !shouldZoom);
+  const showCrosshair = state.joined && state.isAlive && !state.pauseOpen && !shouldZoom;
+  crosshair.classList.toggle("hidden", !showCrosshair);
 }
 
 function updatePlayerList(players) {
+  const me = players.find((p) => p.id === state.playerId);
+  if (me) {
+    state.health = Number(me.health) || state.health;
+    setLocalAlive(me.alive !== false);
+    updateHealthHud();
+  }
+
   const remoteIds = new Set(players.filter((p) => p.id !== state.playerId).map((p) => p.id));
   remoteMeshes.forEach((remotePlayer, id) => {
     if (remoteIds.has(id)) return;
@@ -561,12 +787,22 @@ function updatePlayerList(players) {
       remotePlayer = { root };
       remoteMeshes.set(p.id, remotePlayer);
     }
+    remotePlayer.id = p.id;
+    remotePlayer.root.userData.playerId = p.id;
+    if (remotePlayer.root.userData.hitbox) {
+      remotePlayer.root.userData.hitbox.userData.playerId = p.id;
+    }
     updateNameTagSprite(remotePlayer.root.userData.nameTag, p.name || "Player", p.team || null);
     applyRemoteTeamStyle(remotePlayer.root, p.team);
+    setRemoteAliveVisual(remotePlayer.root, p.alive !== false);
   });
 
   const html = players
-    .map((p) => `<li>${p.name} - ${p.team} - ${weaponLabel(p.weapon)}</li>`)
+    .map((p) => {
+      const life = p.alive === false ? "MORT" : `${Math.max(0, Number(p.health) || 0)}PV`;
+      const score = `${Number(p.kills) || 0}/${Number(p.deaths) || 0}`;
+      return `<li>${p.name} - ${p.team} - ${weaponLabel(p.weapon)} - ${life} - K/D ${score}</li>`;
+    })
     .join("");
   playerList.innerHTML = `<strong>Joueurs (${players.length}/10)</strong><ul>${html}</ul>`;
 }
@@ -600,6 +836,7 @@ document.addEventListener("keydown", (e) => {
   }
   state.keys.add(e.code);
   if (e.code === "Space" && state.joined && !state.pauseOpen && state.onGround) {
+    if (!state.isAlive) return;
     state.verticalVelocity = state.jumpSpeed;
     state.onGround = false;
   }
@@ -629,7 +866,7 @@ canvas.addEventListener("click", () => {
 });
 canvas.addEventListener("mousedown", (event) => {
   if (event.button !== 0) return;
-  if (!state.joined || state.pauseOpen || document.pointerLockElement !== canvas) return;
+  if (!state.joined || state.pauseOpen || !state.isAlive || document.pointerLockElement !== canvas) return;
   const stats = getWeaponStats();
   state.isFiring = true;
   shoot();
@@ -637,7 +874,7 @@ canvas.addEventListener("mousedown", (event) => {
 });
 canvas.addEventListener("mousedown", (event) => {
   if (event.button !== 2) return;
-  if (!state.joined || state.pauseOpen) return;
+  if (!state.joined || state.pauseOpen || !state.isAlive) return;
   state.isAiming = true;
 });
 canvas.addEventListener("mouseup", (event) => {
@@ -654,7 +891,7 @@ resumeBtn.addEventListener("click", () => {
 });
 
 function updateMovement(delta) {
-  if (!state.joined || state.pauseOpen) return;
+  if (!state.joined || state.pauseOpen || !state.isAlive) return;
   const fwd = Number(state.keys.has("KeyW")) - Number(state.keys.has("KeyS"));
   const right = Number(state.keys.has("KeyD")) - Number(state.keys.has("KeyA"));
   const dir = new THREE.Vector3();
@@ -672,8 +909,10 @@ function updateMovement(delta) {
   state.verticalVelocity -= state.gravity * delta;
   camera.position.y += state.verticalVelocity * delta;
 
-  if (camera.position.y <= state.playerHeight) {
-    camera.position.y = state.playerHeight;
+  const groundHeight = getGroundHeightAt(camera.position.x, camera.position.z);
+  const minY = state.playerHeight + groundHeight;
+  if (camera.position.y <= minY) {
+    camera.position.y = minY;
     state.verticalVelocity = 0;
     state.onGround = true;
   }
@@ -687,8 +926,45 @@ function updateMovement(delta) {
   state.movementBlend = THREE.MathUtils.lerp(state.movementBlend, isMoving, Math.min(delta * 12, 1));
 }
 
+function getGroundHeightAt(x, z) {
+  const halfPlatformW = mapConfig.platform.width / 2;
+  const halfPlatformD = mapConfig.platform.depth / 2;
+  const halfRampD = mapConfig.ramp.depth / 2;
+  const halfRampW = mapConfig.ramp.width / 2;
+
+  if (Math.abs(x) <= halfPlatformW && Math.abs(z) <= halfPlatformD) {
+    return mapConfig.platform.topY;
+  }
+
+  const leftCenterX = -(halfPlatformW + halfRampW);
+  if (x >= leftCenterX - halfRampW && x <= leftCenterX + halfRampW && Math.abs(z) <= halfRampD) {
+    const localX = x - (leftCenterX - halfRampW);
+    return THREE.MathUtils.clamp(
+      (localX / mapConfig.ramp.width) * mapConfig.ramp.topY,
+      mapConfig.ramp.baseY,
+      mapConfig.ramp.topY
+    );
+  }
+
+  const rightCenterX = halfPlatformW + halfRampW;
+  if (
+    x >= rightCenterX - halfRampW &&
+    x <= rightCenterX + halfRampW &&
+    Math.abs(z) <= halfRampD
+  ) {
+    const localX = rightCenterX + halfRampW - x;
+    return THREE.MathUtils.clamp(
+      (localX / mapConfig.ramp.width) * mapConfig.ramp.topY,
+      mapConfig.ramp.baseY,
+      mapConfig.ramp.topY
+    );
+  }
+
+  return 0;
+}
+
 function sendPlayerUpdate() {
-  if (!state.joined || state.pauseOpen || !state.ws || state.ws.readyState !== WebSocket.OPEN) return;
+  if (!state.joined || state.pauseOpen || !state.isAlive || !state.ws || state.ws.readyState !== WebSocket.OPEN) return;
   const now = performance.now();
   if (now - lastNetworkSend < 50) return;
   lastNetworkSend = now;
@@ -698,7 +974,7 @@ function sendPlayerUpdate() {
       type: "player:update",
       position: {
         x: camera.position.x,
-        y: camera.position.y - 0.5,
+        y: camera.position.y - state.playerHeight,
         z: camera.position.z
       },
       rotationY: state.yaw
@@ -711,6 +987,7 @@ function animate() {
   const delta = clock.getDelta();
 
   updateZoomState();
+  updateRespawnNotice();
   camera.rotation.set(state.pitch, state.yaw, 0, "YXZ");
   updateMovement(delta);
   if (
@@ -741,6 +1018,7 @@ function animateViewModel(delta) {
 }
 
 function shoot() {
+  if (!state.isAlive) return;
   const stats = getWeaponStats();
   const now = performance.now();
   const msBetweenShots = 1000 / stats.fireRate;
@@ -770,7 +1048,7 @@ function shoot() {
       bulletSpeed: stats.bulletSpeed
     });
     spawnBulletVisual(origin, direction, true, stats.bulletSpeed);
-    traceImpact(origin, direction, stats.range);
+    traceImpact(origin, direction, stats.range, true, stats.damage);
   }
   spawnMuzzleFlash(origin);
 
@@ -822,7 +1100,7 @@ function spawnMuzzleFlash(position) {
   flashes.push({ mesh: flash, life: 0.06 });
 }
 
-function traceImpact(origin, direction, maxDistance = 120) {
+function traceImpact(origin, direction, maxDistance = 120, reportHit = false, damage = 0) {
   const rayOrigin = new THREE.Vector3(origin.x, origin.y, origin.z);
   const rayDir = new THREE.Vector3(direction.x, direction.y, direction.z).normalize();
   raycaster.set(rayOrigin, rayDir);
@@ -848,6 +1126,18 @@ function traceImpact(origin, direction, maxDistance = 120) {
   impact.position.copy(impactPos);
   scene.add(impact);
   impacts.push({ mesh: impact, life: 0.16 });
+
+  if (!reportHit || !state.ws || state.ws.readyState !== WebSocket.OPEN) return;
+  const hitPlayerId = hit.object?.userData?.playerId;
+  if (!hitPlayerId) return;
+  if (hitPlayerId === state.playerId) return;
+  state.ws.send(
+    JSON.stringify({
+      type: "player:hit",
+      targetId: hitPlayerId,
+      damage: Math.max(1, Number(damage) || 1)
+    })
+  );
 }
 
 function updateBullets(delta) {
