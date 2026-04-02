@@ -11,6 +11,7 @@ const state = {
   yaw: 0,
   pitch: 0,
   moveSpeed: 5,
+  sprintMultiplier: 2,
   playerHeight: 1.7,
   gravity: 26,
   jumpSpeed: 8.8,
@@ -37,34 +38,34 @@ const MAP_HALF_SIZE = 40;
 const WEAPON_STATS = {
   shotgun: {
     label: "Fusil a pompe",
-    fireRate: 1.1,
-    pellets: 4,
-    spread: 0.08,
-    damage: 70,
-    range: 26,
-    bulletSpeed: 52,
+    fireRate: 1.0,
+    pellets: 6,
+    spread: 0.07,
+    damage: 14,
+    range: 22,
+    bulletSpeed: 56,
     auto: false,
     zoomFov: BASE_FOV
   },
   ak47: {
     label: "AK47",
-    fireRate: 9,
+    fireRate: 8.2,
     pellets: 1,
-    spread: 0.014,
-    damage: 28,
-    range: 62,
-    bulletSpeed: 70,
+    spread: 0.017,
+    damage: 20,
+    range: 58,
+    bulletSpeed: 72,
     auto: true,
     zoomFov: BASE_FOV
   },
   sniper: {
     label: "Sniper",
-    fireRate: 0.9,
+    fireRate: 0.72,
     pellets: 1,
-    spread: 0.001,
-    damage: 120,
-    range: 140,
-    bulletSpeed: 95,
+    spread: 0.002,
+    damage: 92,
+    range: 125,
+    bulletSpeed: 100,
     auto: false,
     zoomFov: 28
   }
@@ -156,20 +157,21 @@ function addStaticWorldMesh(mesh, includePhysics = true) {
 }
 
 const mapConfig = {
-  platform: { width: 16, depth: 12, topY: 3.2, baseY: 1.6 },
-  ramp: { width: 7, depth: 6.2, topY: 3.2, baseY: 0, thickness: 0.32 }
+  platform: { width: 18, depth: 14, topY: 3.8, thickness: 1.2 },
+  ramp: { width: 8.4, depth: 7.6, topY: 3.8, baseY: 0, thickness: 0.34 }
 };
 
 const platform = new THREE.Mesh(
   new THREE.BoxGeometry(
     mapConfig.platform.width,
-    mapConfig.platform.baseY * 2,
+    mapConfig.platform.thickness,
     mapConfig.platform.depth
   ),
   new THREE.MeshStandardMaterial({ color: 0xe4d1a9, roughness: 0.72, metalness: 0.03 })
 );
-platform.position.set(0, mapConfig.platform.baseY, 0);
-addStaticWorldMesh(platform);
+platform.position.set(0, mapConfig.platform.topY - mapConfig.platform.thickness * 0.5, 0);
+// Keep platform out of lateral blockers to avoid sticking while walking on top.
+addStaticWorldMesh(platform, false);
 
 const rampRise = mapConfig.ramp.topY - mapConfig.ramp.baseY;
 const rampAngle = Math.atan2(rampRise, mapConfig.ramp.width);
@@ -977,10 +979,13 @@ function updateMovement(delta) {
   dir.y = 0;
   dir.normalize();
   const side = new THREE.Vector3(-dir.z, 0, dir.x).normalize();
+  const isSprinting = state.keys.has("ShiftLeft") || state.keys.has("ShiftRight");
+  const speedMultiplier = isSprinting ? state.sprintMultiplier : 1;
+  const currentMoveSpeed = state.moveSpeed * speedMultiplier;
 
   const targetVelocity = new THREE.Vector3()
-    .addScaledVector(dir, fwd * state.moveSpeed)
-    .addScaledVector(side, right * state.moveSpeed);
+    .addScaledVector(dir, fwd * currentMoveSpeed)
+    .addScaledVector(side, right * currentMoveSpeed);
   const hasInput = fwd !== 0 || right !== 0;
   const smoothing = Math.min(delta * (hasInput ? 14 : 10), 1);
   smoothedMoveVelocity.lerp(targetVelocity, smoothing);
@@ -1042,13 +1047,14 @@ function isCollidingAt(x, z, playerBottom, playerTop) {
 
 function getGroundHeightAt(x, z, feetY = 0) {
   const rampSnapTolerance = 0.2;
+  const platformSnapTolerance = 0.35;
   const halfPlatformW = mapConfig.platform.width / 2;
   const halfPlatformD = mapConfig.platform.depth / 2;
   const halfRampD = mapConfig.ramp.depth / 2;
   const halfRampW = mapConfig.ramp.width / 2;
 
   if (Math.abs(x) <= halfPlatformW && Math.abs(z) <= halfPlatformD) {
-    return mapConfig.platform.topY;
+    return feetY >= mapConfig.platform.topY - platformSnapTolerance ? mapConfig.platform.topY : 0;
   }
 
   const leftCenterX = -(halfPlatformW + halfRampW);
@@ -1127,11 +1133,25 @@ function animate() {
 function animateViewModel(delta) {
   const t = performance.now() * 0.001;
   const intensity = state.movementBlend;
-  viewModel.position.x = 0.3 + Math.sin(t * 9.5) * 0.008 * intensity;
+  const sprinting =
+    state.joined &&
+    state.isAlive &&
+    !state.pauseOpen &&
+    (state.keys.has("ShiftLeft") || state.keys.has("ShiftRight"));
+  const sprintFactor = sprinting ? 1.7 : 1;
+  const bobX = 0.008 * sprintFactor;
+  const bobY = 0.008 * sprintFactor;
+  const bobRotZ = 0.014 * sprintFactor;
+  const bobRotX = 0.01 * sprintFactor;
+  const bobRotY = 0.008 * sprintFactor;
+
+  viewModel.position.x = 0.3 + Math.sin(t * 9.5 * sprintFactor) * bobX * intensity;
   viewModel.position.y =
-    -0.31 + Math.cos(t * 7.5) * 0.008 * intensity + (state.onGround ? 0 : -0.03);
-  viewModel.rotation.z = Math.sin(t * 8.5) * 0.014 * intensity;
-  viewModel.rotation.x = -0.02 + Math.cos(t * 8) * 0.01 * intensity;
+    -0.31 + Math.cos(t * 7.5 * sprintFactor) * bobY * intensity + (state.onGround ? 0 : -0.03);
+  viewModel.position.z = -0.52 + Math.sin(t * 15 * sprintFactor) * 0.004 * intensity;
+  viewModel.rotation.z = Math.sin(t * 8.5 * sprintFactor) * bobRotZ * intensity;
+  viewModel.rotation.x = -0.02 + Math.cos(t * 8 * sprintFactor) * bobRotX * intensity;
+  viewModel.rotation.y = -0.22 + Math.sin(t * 6.7 * sprintFactor) * bobRotY * intensity;
 }
 
 function shoot() {

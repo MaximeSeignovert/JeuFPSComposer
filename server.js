@@ -326,11 +326,7 @@ wss.on("connection", (ws) => {
       const allowed = new Set(["shotgun", "sniper", "ak47"]);
       if (allowed.has(msg.weapon)) ws.meta.weapon = msg.weapon;
       if (ws.meta.roomId) {
-        if (ws.meta.alive) {
-          killAndScheduleRespawn(ws, null);
-        } else {
-          sendRoomPlayers(ws.meta.roomId);
-        }
+        sendRoomPlayers(ws.meta.roomId);
       }
       return;
     }
