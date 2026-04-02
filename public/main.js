@@ -22,6 +22,7 @@ const state = {
   onGround: true,
   movementBlend: 0,
   lastShotAt: 0,
+  lastJumpPadBoostAt: 0,
   isFiring: false,
   isAiming: false,
   health: 100,
@@ -154,6 +155,8 @@ scene.add(floor);
 const worldColliders = [floor];
 const staticBlockColliders = [];
 const playerCollisionRadius = 0.34;
+const mapAnimators = [];
+const jumpPads = [];
 
 function addStaticWorldMesh(mesh, includePhysics = true) {
   scene.add(mesh);
@@ -255,6 +258,84 @@ const frontWall = backWall.clone();
 frontWall.position.z = 42;
 addStaticWorldMesh(frontWall);
 
+function addJumpPad(x, z, color = 0x5fe1ff) {
+  const pad = new THREE.Group();
+  const base = new THREE.Mesh(
+    new THREE.CylinderGeometry(1.7, 1.9, 0.3, 24),
+    new THREE.MeshStandardMaterial({ color: 0x2b3550, roughness: 0.55, metalness: 0.45 })
+  );
+  base.position.y = 0.16;
+  pad.add(base);
+
+  const ring = new THREE.Mesh(
+    new THREE.TorusGeometry(1.1, 0.12, 10, 28),
+    new THREE.MeshStandardMaterial({
+      color,
+      emissive: color,
+      emissiveIntensity: 1.4,
+      roughness: 0.2,
+      metalness: 0.7
+    })
+  );
+  ring.rotation.x = Math.PI / 2;
+  ring.position.y = 0.32;
+  pad.add(ring);
+
+  const core = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.5, 0.65, 0.08, 16),
+    new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: color, emissiveIntensity: 1.15 })
+  );
+  core.position.y = 0.35;
+  pad.add(core);
+
+  pad.position.set(x, 0, z);
+  scene.add(pad);
+  jumpPads.push({ x, z, radius: 1.8, boost: 11.8, ring, core });
+  mapAnimators.push((time) => {
+    const pulse = 0.6 + (Math.sin(time * 4 + x * 0.1 + z * 0.08) + 1) * 0.45;
+    ring.material.emissiveIntensity = 0.8 + pulse;
+    core.material.emissiveIntensity = 0.7 + pulse * 0.8;
+  });
+}
+
+function addSpinnerProp(x, z, color = 0xffa64d) {
+  const root = new THREE.Group();
+  const pillar = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.35, 0.45, 4.2, 14),
+    new THREE.MeshStandardMaterial({ color: 0x3f4666, roughness: 0.65, metalness: 0.35 })
+  );
+  pillar.position.y = 2.1;
+  root.add(pillar);
+
+  const rotor = new THREE.Group();
+  rotor.position.y = 3.5;
+  for (let i = 0; i < 3; i += 1) {
+    const blade = new THREE.Mesh(
+      new THREE.BoxGeometry(0.14, 0.24, 2.8),
+      new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.45, metalness: 0.45 })
+    );
+    blade.rotation.y = (Math.PI * 2 * i) / 3;
+    blade.position.set(Math.sin(blade.rotation.y) * 1.2, 0, Math.cos(blade.rotation.y) * 1.2);
+    rotor.add(blade);
+  }
+  root.add(rotor);
+  root.position.set(x, 0, z);
+  scene.add(root);
+  mapAnimators.push((time, delta) => {
+    rotor.rotation.y += delta * 2.6;
+    root.position.y = Math.sin(time * 1.4 + x * 0.05) * 0.12;
+  });
+}
+
+addJumpPad(-26, 0, 0x68e6ff);
+addJumpPad(26, 0, 0x7fff95);
+addJumpPad(0, -30, 0xff89cf);
+addJumpPad(0, 30, 0xffd05a);
+addSpinnerProp(-14, -14, 0x74f7ff);
+addSpinnerProp(14, 14, 0xff8ad7);
+addSpinnerProp(-14, 14, 0xffd673);
+addSpinnerProp(14, -14, 0x8cff7b);
+
 const localMaterial = new THREE.MeshStandardMaterial({ color: 0x45e0a8 });
 const remoteMeshes = new Map();
 
@@ -351,24 +432,44 @@ function createNameTagSprite(name) {
   const sprite = new THREE.Sprite(spriteMaterial);
   sprite.scale.set(1.9, 0.46, 1);
   sprite.renderOrder = 9;
-  sprite.userData = { canvas: canvasTag, ctx, texture, currentName: "", currentTeam: null };
+  sprite.userData = { canvas: canvasTag, ctx, texture, currentName: "", currentColor: "" };
   updateNameTagSprite(sprite, name, null);
   return sprite;
 }
 
-function updateNameTagSprite(sprite, name, team) {
+function colorFromPlayerId(playerId) {
+  const key = String(playerId || "default");
+  let hash = 0;
+  for (let i = 0; i < key.length; i += 1) {
+    hash = (hash * 31 + key.charCodeAt(i)) >>> 0;
+  }
+  const hue = hash % 360;
+  const color = new THREE.Color();
+  color.setHSL(hue / 360, 0.62, 0.56);
+  return color;
+}
+
+function toRgbaString(color, alpha = 1) {
+  const r = Math.round(THREE.MathUtils.clamp(color.r, 0, 1) * 255);
+  const g = Math.round(THREE.MathUtils.clamp(color.g, 0, 1) * 255);
+  const b = Math.round(THREE.MathUtils.clamp(color.b, 0, 1) * 255);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+function updateNameTagSprite(sprite, name, playerColor) {
   if (!sprite?.userData?.ctx) return;
   const safeName = String(name || "Player").slice(0, 20);
-  if (sprite.userData.currentName === safeName && sprite.userData.currentTeam === team) return;
+  const bgColor = playerColor || new THREE.Color(0x3d5a85);
+  const bgColorKey = bgColor.getHexString();
+  if (sprite.userData.currentName === safeName && sprite.userData.currentColor === bgColorKey) return;
 
   sprite.userData.currentName = safeName;
-  sprite.userData.currentTeam = team;
+  sprite.userData.currentColor = bgColorKey;
 
   const { canvas: canvasTag, ctx, texture } = sprite.userData;
   ctx.clearRect(0, 0, canvasTag.width, canvasTag.height);
 
-  const bgColor = team === "alpha" ? "rgba(53, 119, 255, 0.85)" : team === "bravo" ? "rgba(255, 95, 122, 0.85)" : "rgba(22, 26, 32, 0.85)";
-  ctx.fillStyle = bgColor;
+  ctx.fillStyle = toRgbaString(bgColor, 0.88);
   roundRect(ctx, 10, 18, canvasTag.width - 20, 94, 26);
   ctx.fill();
 
@@ -401,12 +502,11 @@ function roundRect(ctx, x, y, width, height, radius) {
   ctx.closePath();
 }
 
-function applyRemoteTeamStyle(root, team) {
+function applyRemoteTeamStyle(root, team, playerId) {
   const shirtMaterial = root?.userData?.materials?.shirtMaterial;
   if (!shirtMaterial) return;
-  if (team === "alpha") shirtMaterial.color.setHex(0x3f79f0);
-  else if (team === "bravo") shirtMaterial.color.setHex(0xdc5f85);
-  else shirtMaterial.color.setHex(0x4f8cf6);
+  const playerColor = colorFromPlayerId(playerId);
+  shirtMaterial.color.copy(playerColor);
 }
 
 function setRemoteAliveVisual(root, alive) {
@@ -791,8 +891,9 @@ function connect() {
       setRemoteAliveVisual(remotePlayer.root, msg.alive !== false);
       if (msg.name || msg.team) {
         const nameTag = remotePlayer.root.userData.nameTag;
-        updateNameTagSprite(nameTag, msg.name || "Player", msg.team || null);
-        applyRemoteTeamStyle(remotePlayer.root, msg.team);
+        const playerColor = colorFromPlayerId(msg.id);
+        updateNameTagSprite(nameTag, msg.name || "Player", playerColor);
+        applyRemoteTeamStyle(remotePlayer.root, msg.team, msg.id);
       }
       return;
     }
@@ -828,6 +929,10 @@ function connect() {
       state.health = Number(msg.health) || 100;
       state.respawnUntil = 0;
       setLocalAlive(msg.alive !== false);
+      setPauseMenu(false);
+      if (document.pointerLockElement !== canvas) {
+        canvas.requestPointerLock();
+      }
       updateHealthHud();
       return;
     }
@@ -945,8 +1050,9 @@ function updatePlayerList(players) {
     const remotePlayer = ensureRemotePlayer(p.id);
     remotePlayer.team = p.team || remotePlayer.team || null;
     applyRemoteSnapshot(remotePlayer, p, true);
-    updateNameTagSprite(remotePlayer.root.userData.nameTag, p.name || "Player", p.team || null);
-    applyRemoteTeamStyle(remotePlayer.root, p.team);
+    const playerColor = colorFromPlayerId(p.id);
+    updateNameTagSprite(remotePlayer.root.userData.nameTag, p.name || "Player", playerColor);
+    applyRemoteTeamStyle(remotePlayer.root, p.team, p.id);
     setRemoteAliveVisual(remotePlayer.root, p.alive !== false);
   });
 
@@ -1023,7 +1129,7 @@ document.addEventListener("mousemove", (e) => {
 document.addEventListener("pointerlockchange", () => {
   if (!state.joined) return;
   const lockedOnCanvas = document.pointerLockElement === canvas;
-  if (!lockedOnCanvas && !state.pauseOpen) {
+  if (!lockedOnCanvas && !state.pauseOpen && state.isAlive) {
     setPauseMenu(true);
   }
 });
@@ -1099,10 +1205,27 @@ function updateMovement(delta) {
   const lim = MAP_HALF_SIZE;
   camera.position.x = THREE.MathUtils.clamp(camera.position.x, -lim, lim);
   camera.position.z = THREE.MathUtils.clamp(camera.position.z, -lim, lim);
+  applyJumpPads();
 
   const horizontalSpeed = smoothedMoveVelocity.length();
   const isMoving = horizontalSpeed > 0.3 ? 1 : 0;
   state.movementBlend = THREE.MathUtils.lerp(state.movementBlend, isMoving, Math.min(delta * 12, 1));
+}
+
+function applyJumpPads() {
+  if (!state.onGround) return;
+  const now = performance.now();
+  if (now - state.lastJumpPadBoostAt < 350) return;
+  for (const pad of jumpPads) {
+    const dx = camera.position.x - pad.x;
+    const dz = camera.position.z - pad.z;
+    const distSq = dx * dx + dz * dz;
+    if (distSq > pad.radius * pad.radius) continue;
+    state.verticalVelocity = Math.max(state.verticalVelocity, pad.boost);
+    state.onGround = false;
+    state.lastJumpPadBoostAt = now;
+    break;
+  }
 }
 
 function resolveHorizontalMovement(previousPos, delta) {
@@ -1242,6 +1365,7 @@ function sendPlayerUpdate() {
 function animate() {
   requestAnimationFrame(animate);
   const delta = clock.getDelta();
+  const time = performance.now() * 0.001;
 
   updateZoomState();
   updateRespawnNotice();
@@ -1262,9 +1386,16 @@ function animate() {
   updateBullets(delta);
   updateFlashes(delta);
   updateImpacts(delta);
+  updateMapFun(time, delta);
   sendPlayerUpdate();
 
   renderer.render(scene, camera);
+}
+
+function updateMapFun(time, delta) {
+  for (const animateMapPart of mapAnimators) {
+    animateMapPart(time, delta);
+  }
 }
 
 function animateViewModel(delta) {
