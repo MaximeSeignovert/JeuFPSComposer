@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FPS 5v5 Three.js</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main id="app">
+      <section id="menu" class="panel">
+        <h1>FPS Arena 5v5</h1>
+        <p class="subtitle">Choisis ton pseudo et une room.</p>
+
+        <div class="field-row">
+          <label for="nameInput">Pseudo</label>
+          <input id="nameInput" type="text" maxlength="20" value="Player" />
+        </div>
+
+        <h2>Rooms</h2>
+        <div id="roomsList" class="rooms-list"></div>
+      </section>
+
+      <section id="hud" class="hud hidden">
+        <div class="hud-left">
+          <strong id="hudRoom">Room ?</strong>
+          <span id="hudTeam">Equipe ?</span>
+        </div>
+        <div class="hud-right">
+          <span id="hudWeapon">Arme: AK47</span>
+          <span>WASD + Souris</span>
+        </div>
+      </section>
+      <section id="pauseMenu" class="pause-menu hidden">
+        <h3>Menu pause</h3>
+        <p class="subtitle">Appuie sur Echap pour ouvrir/fermer ce menu.</p>
+        <div class="field-row">
+          <span>Changer d'arme</span>
+          <div id="weaponChoice" class="weapon-choice">
+            <button data-weapon="shotgun">Fusil a pompe</button>
+            <button data-weapon="sniper">Sniper</button>
+            <button data-weapon="ak47" class="active">AK47</button>
+          </div>
+        </div>
+        <button id="resumeBtn">Reprendre</button>
+      </section>
+
+      <section id="crosshair" class="crosshair hidden">+</section>
+      <section id="playerList" class="player-list hidden"></section>
+      <canvas id="gameCanvas"></canvas>
+    </main>
+
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>
