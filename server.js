@@ -12,9 +12,9 @@ const DEFAULT_PORT = 3000;
 const PORT = Number(process.env.PORT || DEFAULT_PORT);
 const MAX_ROOMS = 1;
 const ROOM_SIZE = 10;
-const TEAM_SIZE = 5;
 const MAX_HEALTH = 100;
 const RESPAWN_DELAY_MS = 3200;
+const RESPAWN_IMMUNITY_MS = 1800;
 const ENABLE_DEV_BOT = process.env.DEV_BOT === "1" || process.env.NODE_ENV !== "production";
 const DEV_BOT_FIRE_INTERVAL_MS = 220;
 const DEV_BOT_MOVE_INTERVAL_MS = 60;
@@ -40,7 +40,7 @@ function createRoom(id) {
     devBot: {
       id: `${id}-dev-bot`,
       name: "DEV Bot",
-      team: "bravo",
+      team: "ffa",
       weapon: "ak47",
       health: 100,
       alive: true,
@@ -90,34 +90,6 @@ function sendToRoom(roomId, data) {
       playerWs.send(payload);
     }
   });
-}
-
-function pickTeam(room) {
-  let alpha = 0;
-  let bravo = 0;
-  room.players.forEach((playerWs) => {
-    if (playerWs.meta?.team === "alpha") alpha += 1;
-    else if (playerWs.meta?.team === "bravo") bravo += 1;
-  });
-  const alphaAvailable = alpha < TEAM_SIZE;
-  const bravoAvailable = bravo < TEAM_SIZE;
-  if (!alphaAvailable && !bravoAvailable) return null;
-  if (alphaAvailable && !bravoAvailable) return "alpha";
-  if (!alphaAvailable && bravoAvailable) return "bravo";
-
-  if (alpha < bravo) return "alpha";
-  if (bravo < alpha) return "bravo";
-  return Math.random() < 0.5 ? "alpha" : "bravo";
-}
-
-function getTeamCounts(room) {
-  let alpha = 0;
-  let bravo = 0;
-  room.players.forEach((playerWs) => {
-    if (playerWs.meta?.team === "alpha") alpha += 1;
-    else if (playerWs.meta?.team === "bravo") bravo += 1;
-  });
-  return { alpha, bravo };
 }
 
 function getSpawnPosition() {
@@ -268,6 +240,7 @@ function killAndScheduleRespawn(victimWs, killerWs = null) {
 
     victimWs.meta.health = MAX_HEALTH;
     victimWs.meta.alive = true;
+    victimWs.meta.invulnerableUntil = Date.now() + RESPAWN_IMMUNITY_MS;
     const spawn = getSpawnPosition();
     victimWs.meta.lastPosition = spawn;
 
@@ -305,7 +278,8 @@ wss.on("connection", (ws) => {
     alive: true,
     kills: 0,
     deaths: 0,
-    respawnTimer: null
+    respawnTimer: null,
+    invulnerableUntil: 0
   };
 
   ws.send(
@@ -338,26 +312,7 @@ wss.on("connection", (ws) => {
     }
 
     if (msg.type === "team:select") {
-      if (!ws.meta.roomId) return;
-      const room = rooms.get(ws.meta.roomId);
-      if (!room) return;
-      const requestedTeam = msg.team === "alpha" || msg.team === "bravo" ? msg.team : null;
-      if (!requestedTeam) return;
-      if (requestedTeam === ws.meta.team) return;
-
-      const counts = getTeamCounts(room);
-      const targetCount = requestedTeam === "alpha" ? counts.alpha : counts.bravo;
-      if (targetCount >= TEAM_SIZE) {
-        ws.send(JSON.stringify({ type: "room:error", message: "Equipe pleine" }));
-        return;
-      }
-
-      ws.meta.team = requestedTeam;
-      if (ws.meta.alive) {
-        killAndScheduleRespawn(ws, null);
-      } else {
-        sendRoomPlayers(ws.meta.roomId);
-      }
+      ws.send(JSON.stringify({ type: "room:error", message: "Mode chacun pour soi actif" }));
       return;
     }
 
@@ -372,16 +327,11 @@ wss.on("connection", (ws) => {
         const prev = rooms.get(ws.meta.roomId);
         prev?.players.delete(ws.meta.id);
       }
-      const team = pickTeam(room);
-      if (!team) {
-        ws.send(JSON.stringify({ type: "room:error", message: "Teams complètes" }));
-        return;
-      }
-
       ws.meta.roomId = room.id;
-      ws.meta.team = team;
+      ws.meta.team = "ffa";
       ws.meta.health = MAX_HEALTH;
       ws.meta.alive = true;
+      ws.meta.invulnerableUntil = Date.now() + RESPAWN_IMMUNITY_MS;
       const spawn = getSpawnPosition();
       ws.meta.lastPosition = spawn;
       room.players.set(ws.meta.id, ws);
@@ -391,7 +341,7 @@ wss.on("connection", (ws) => {
           type: "room:joined",
           id: ws.meta.id,
           roomId: room.id,
-          team,
+          team: "ffa",
           weapon: ws.meta.weapon,
           health: ws.meta.health,
           alive: ws.meta.alive,
@@ -445,7 +395,7 @@ wss.on("connection", (ws) => {
       const damage = Math.max(1, Math.min(200, rawDamage));
       const targetWs = room.players.get(targetId);
       if (!targetWs || !targetWs.meta.alive) return;
-      if (targetWs.meta.team === ws.meta.team) return;
+      if (Date.now() < (targetWs.meta.invulnerableUntil || 0)) return;
 
       targetWs.meta.health = Math.max(0, targetWs.meta.health - damage);
       if (targetWs.readyState === WebSocket.OPEN) {

@@ -78,7 +78,6 @@ const menu = document.getElementById("menu");
 const roomsList = document.getElementById("roomsList");
 const nameInput = document.getElementById("nameInput");
 const weaponChoice = document.getElementById("weaponChoice");
-const teamChoice = document.getElementById("teamChoice");
 const pauseMenu = document.getElementById("pauseMenu");
 const resumeBtn = document.getElementById("resumeBtn");
 const hud = document.getElementById("hud");
@@ -427,10 +426,7 @@ function updateHealthHud() {
 }
 
 function updateTeamHud() {
-  hudTeam.textContent = `Equipe: ${(state.team || "?").toUpperCase()}`;
-  teamChoice?.querySelectorAll("button[data-team]").forEach((button) => {
-    button.classList.toggle("active", button.getAttribute("data-team") === state.team);
-  });
+  hudTeam.textContent = "Mode: Chacun pour soi";
 }
 
 function ensureRemotePlayer(id) {
@@ -761,7 +757,7 @@ function connect() {
       state.health = Number(msg.health) || 100;
       setLocalAlive(msg.alive !== false);
       if (msg.spawn) {
-        camera.position.set(msg.spawn.x, state.playerHeight + getGroundHeightAt(msg.spawn.x, msg.spawn.z), msg.spawn.z);
+        applyLocalSpawn(msg.spawn);
       }
       setActiveWeaponModel(state.weapon);
       weaponChoice.querySelectorAll("button").forEach((b) => {
@@ -827,11 +823,7 @@ function connect() {
 
     if (msg.type === "player:respawn") {
       if (msg.spawn) {
-        camera.position.set(
-          msg.spawn.x,
-          state.playerHeight + getGroundHeightAt(msg.spawn.x, msg.spawn.z),
-          msg.spawn.z
-        );
+        applyLocalSpawn(msg.spawn);
       }
       state.health = Number(msg.health) || 100;
       state.respawnUntil = 0;
@@ -958,14 +950,30 @@ function updatePlayerList(players) {
     setRemoteAliveVisual(remotePlayer.root, p.alive !== false);
   });
 
-  const html = players
-    .map((p) => {
+  const scoreboard = [...players].sort((a, b) => {
+    const killDiff = (Number(b.kills) || 0) - (Number(a.kills) || 0);
+    if (killDiff !== 0) return killDiff;
+    const deathDiff = (Number(a.deaths) || 0) - (Number(b.deaths) || 0);
+    if (deathDiff !== 0) return deathDiff;
+    return String(a.name || "").localeCompare(String(b.name || ""));
+  });
+
+  const html = scoreboard
+    .map((p, idx) => {
       const life = p.alive === false ? "MORT" : `${Math.max(0, Number(p.health) || 0)}PV`;
-      const score = `${Number(p.kills) || 0}/${Number(p.deaths) || 0}`;
-      return `<li>${p.name} - ${p.team} - ${weaponLabel(p.weapon)} - ${life} - K/D ${score}</li>`;
+      const isMe = p.id === state.playerId;
+      return `<li class="${isMe ? "me" : ""}">
+        <span class="rank">#${idx + 1}</span>
+        <span class="name">${p.name}${isMe ? " (Toi)" : ""}</span>
+        <span class="kd">${Number(p.kills) || 0}/${Number(p.deaths) || 0}</span>
+        <span class="life">${life}</span>
+      </li>`;
     })
     .join("");
-  playerList.innerHTML = `<strong>Joueurs (${players.length}/10)</strong><ul>${html}</ul>`;
+  playerList.innerHTML = `
+    <strong>Scoreboard FFA (${players.length}/10)</strong>
+    <ul class="scoreboard-list">${html}</ul>
+  `;
 }
 
 weaponChoice.addEventListener("click", (event) => {
@@ -980,18 +988,6 @@ weaponChoice.addEventListener("click", (event) => {
   hudWeapon.textContent = `Arme: ${weaponLabel(weapon)}`;
   if (state.ws && state.ws.readyState === WebSocket.OPEN) {
     state.ws.send(JSON.stringify({ type: "weapon:select", weapon }));
-  }
-});
-
-teamChoice?.addEventListener("click", (event) => {
-  const target = event.target.closest("button[data-team]");
-  if (!target) return;
-  const team = target.getAttribute("data-team");
-  if (!team || team === state.team) return;
-  state.team = team;
-  updateTeamHud();
-  if (state.ws && state.ws.readyState === WebSocket.OPEN) {
-    state.ws.send(JSON.stringify({ type: "team:select", team }));
   }
 });
 
@@ -1183,6 +1179,47 @@ function getGroundHeightAt(x, z, feetY = 0) {
   return 0;
 }
 
+function findSafeSpawnPosition(spawn) {
+  const fallback = {
+    x: Number(spawn?.x) || 0,
+    z: Number(spawn?.z) || 0
+  };
+  const maxBound = MAP_HALF_SIZE - playerCollisionRadius - 0.2;
+  fallback.x = THREE.MathUtils.clamp(fallback.x, -maxBound, maxBound);
+  fallback.z = THREE.MathUtils.clamp(fallback.z, -maxBound, maxBound);
+
+  const isSafeAt = (x, z) => {
+    const ground = getGroundHeightAt(x, z);
+    const playerBottom = ground;
+    const playerTop = ground + state.playerHeight + 0.25;
+    return !isCollidingAt(x, z, playerBottom, playerTop);
+  };
+
+  if (isSafeAt(fallback.x, fallback.z)) return fallback;
+
+  const radiusStep = 0.6;
+  const maxRadius = 8;
+  const angleSteps = 24;
+  for (let radius = radiusStep; radius <= maxRadius; radius += radiusStep) {
+    for (let i = 0; i < angleSteps; i += 1) {
+      const angle = (i / angleSteps) * Math.PI * 2;
+      const x = THREE.MathUtils.clamp(fallback.x + Math.cos(angle) * radius, -maxBound, maxBound);
+      const z = THREE.MathUtils.clamp(fallback.z + Math.sin(angle) * radius, -maxBound, maxBound);
+      if (isSafeAt(x, z)) return { x, z };
+    }
+  }
+
+  return fallback;
+}
+
+function applyLocalSpawn(spawn) {
+  const safe = findSafeSpawnPosition(spawn);
+  const ground = getGroundHeightAt(safe.x, safe.z);
+  camera.position.set(safe.x, state.playerHeight + ground, safe.z);
+  state.verticalVelocity = 0;
+  state.onGround = true;
+}
+
 function sendPlayerUpdate() {
   if (!state.joined || state.pauseOpen || !state.isAlive || !state.ws || state.ws.readyState !== WebSocket.OPEN) return;
   const now = performance.now();
@@ -1372,8 +1409,6 @@ function traceImpact(origin, direction, maxDistance = 120, reportHit = false, da
   const hitPlayerId = hit.object?.userData?.playerId;
   if (!hitPlayerId) return hit;
   if (hitPlayerId === state.playerId) return hit;
-  const hitRemote = remoteMeshes.get(hitPlayerId);
-  if (hitRemote?.team && state.team && hitRemote.team === state.team) return hit;
   triggerHitmarker();
   state.ws.send(
     JSON.stringify({
