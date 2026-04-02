@@ -78,6 +78,12 @@ input {
   gap: 8px;
 }
 
+.team-choice {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+
 button {
   border: 1px solid var(--stroke);
   background: rgba(36, 53, 97, 0.3);
@@ -148,6 +154,56 @@ button.active {
   z-index: 2;
   color: var(--accent);
   pointer-events: none;
+}
+
+.hitmarker {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 28px;
+  height: 28px;
+  transform: translate(-50%, -50%);
+  z-index: 3;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 80ms ease;
+}
+
+.hitmarker span {
+  position: absolute;
+  width: 2px;
+  height: 13px;
+  background: #ffffff;
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.6);
+  border-radius: 999px;
+}
+
+.hitmarker span:nth-child(1) {
+  left: 6px;
+  top: 1px;
+  transform: rotate(45deg);
+}
+
+.hitmarker span:nth-child(2) {
+  right: 6px;
+  top: 1px;
+  transform: rotate(-45deg);
+}
+
+.hitmarker span:nth-child(3) {
+  left: 6px;
+  bottom: 1px;
+  transform: rotate(-45deg);
+}
+
+.hitmarker span:nth-child(4) {
+  right: 6px;
+  bottom: 1px;
+  transform: rotate(45deg);
+}
+
+.hitmarker.show {
+  opacity: 1;
 }
 
 .sniper-scope {

@@ -33,6 +33,7 @@ const state = {
 
 const BASE_FOV = 74;
 const PLAYER_NAME_STORAGE_KEY = "fps.playerName";
+const MAP_HALF_SIZE = 40;
 const WEAPON_STATS = {
   shotgun: {
     label: "Fusil a pompe",
@@ -73,10 +74,12 @@ const menu = document.getElementById("menu");
 const roomsList = document.getElementById("roomsList");
 const nameInput = document.getElementById("nameInput");
 const weaponChoice = document.getElementById("weaponChoice");
+const teamChoice = document.getElementById("teamChoice");
 const pauseMenu = document.getElementById("pauseMenu");
 const resumeBtn = document.getElementById("resumeBtn");
 const hud = document.getElementById("hud");
 const crosshair = document.getElementById("crosshair");
+const hitmarker = document.getElementById("hitmarker");
 const sniperScope = document.getElementById("sniperScope");
 const playerList = document.getElementById("playerList");
 const hudRoom = document.getElementById("hudRoom");
@@ -247,6 +250,14 @@ addStaticWorldMesh(sideWallLeft);
 const sideWallRight = sideWallLeft.clone();
 sideWallRight.position.x = 42;
 addStaticWorldMesh(sideWallRight);
+
+const backWall = new THREE.Mesh(new THREE.BoxGeometry(85, 4, 2), sideWallMaterial);
+backWall.position.set(0, 2, -42);
+addStaticWorldMesh(backWall);
+
+const frontWall = backWall.clone();
+frontWall.position.z = 42;
+addStaticWorldMesh(frontWall);
 
 const topRailMaterial = new THREE.MeshStandardMaterial({ color: 0xe94f7a, roughness: 0.84 });
 const topRailFront = new THREE.Mesh(
@@ -424,6 +435,13 @@ function updateHealthHud() {
   hudHealth.style.color = state.health <= 25 ? "#ff607f" : state.health <= 55 ? "#ffbf66" : "";
 }
 
+function updateTeamHud() {
+  hudTeam.textContent = `Equipe: ${(state.team || "?").toUpperCase()}`;
+  teamChoice?.querySelectorAll("button[data-team]").forEach((button) => {
+    button.classList.toggle("active", button.getAttribute("data-team") === state.team);
+  });
+}
+
 function setLocalAlive(alive) {
   state.isAlive = Boolean(alive);
   if (!state.isAlive) {
@@ -455,6 +473,20 @@ const raycaster = new THREE.Raycaster();
 const clock = new THREE.Clock();
 let lastNetworkSend = 0;
 const smoothedMoveVelocity = new THREE.Vector3();
+let hitmarkerTimer = null;
+
+function triggerHitmarker() {
+  if (!hitmarker) return;
+  hitmarker.classList.remove("hidden");
+  hitmarker.classList.add("show");
+  if (hitmarkerTimer) {
+    clearTimeout(hitmarkerTimer);
+  }
+  hitmarkerTimer = setTimeout(() => {
+    hitmarker.classList.remove("show");
+    hitmarker.classList.add("hidden");
+  }, 110);
+}
 
 function createViewModel() {
   const group = new THREE.Group();
@@ -638,12 +670,22 @@ function connect() {
       weaponChoice.querySelectorAll("button").forEach((b) => {
         b.classList.toggle("active", b.getAttribute("data-weapon") === state.weapon);
       });
+      updateTeamHud();
       enterGame();
       return;
     }
 
     if (msg.type === "room:players") {
       updatePlayerList(msg.players);
+      return;
+    }
+
+    if (msg.type === "room:error") {
+      respawnNotice.textContent = msg.message || "Action impossible";
+      respawnNotice.classList.remove("hidden");
+      setTimeout(() => {
+        if (state.isAlive) respawnNotice.classList.add("hidden");
+      }, 1500);
       return;
     }
 
@@ -658,6 +700,7 @@ function connect() {
         remoteMeshes.set(msg.id, remotePlayer);
       }
       remotePlayer.id = msg.id;
+      remotePlayer.team = msg.team || remotePlayer.team || null;
       remotePlayer.root.userData.playerId = msg.id;
       if (remotePlayer.root.userData.hitbox) {
         remotePlayer.root.userData.hitbox.userData.playerId = msg.id;
@@ -716,8 +759,9 @@ function connect() {
         if (!shot?.direction) return;
         const range = Number(shot.range) || 80;
         const bulletSpeed = Number(shot.bulletSpeed) || 68;
-        spawnBulletVisual(msg.origin, shot.direction, false, bulletSpeed);
-        traceImpact(msg.origin, shot.direction, range, false, 0);
+        const impact = traceImpact(msg.origin, shot.direction, range, false, 0);
+        const maxTravel = impact?.distance || range;
+        spawnBulletVisual(msg.origin, shot.direction, false, bulletSpeed, maxTravel);
       });
     }
   });
@@ -752,7 +796,7 @@ function enterGame() {
   playerList.classList.remove("hidden");
   pauseMenu.classList.add("hidden");
   hudRoom.textContent = state.roomId;
-  hudTeam.textContent = `Equipe: ${state.team.toUpperCase()}`;
+  updateTeamHud();
   hudWeapon.textContent = `Arme: ${weaponLabel(state.weapon)}`;
   updateHealthHud();
   updateRespawnNotice();
@@ -803,6 +847,8 @@ function updatePlayerList(players) {
   if (me) {
     state.health = Number(me.health) || state.health;
     setLocalAlive(me.alive !== false);
+    state.team = me.team || state.team;
+    updateTeamHud();
     updateHealthHud();
   }
 
@@ -823,6 +869,7 @@ function updatePlayerList(players) {
       remoteMeshes.set(p.id, remotePlayer);
     }
     remotePlayer.id = p.id;
+    remotePlayer.team = p.team || remotePlayer.team || null;
     remotePlayer.root.userData.playerId = p.id;
     if (remotePlayer.root.userData.hitbox) {
       remotePlayer.root.userData.hitbox.userData.playerId = p.id;
@@ -859,6 +906,18 @@ weaponChoice.addEventListener("click", (event) => {
   hudWeapon.textContent = `Arme: ${weaponLabel(weapon)}`;
   if (state.ws && state.ws.readyState === WebSocket.OPEN) {
     state.ws.send(JSON.stringify({ type: "weapon:select", weapon }));
+  }
+});
+
+teamChoice?.addEventListener("click", (event) => {
+  const target = event.target.closest("button[data-team]");
+  if (!target) return;
+  const team = target.getAttribute("data-team");
+  if (!team || team === state.team) return;
+  state.team = team;
+  updateTeamHud();
+  if (state.ws && state.ws.readyState === WebSocket.OPEN) {
+    state.ws.send(JSON.stringify({ type: "team:select", team }));
   }
 });
 
@@ -950,7 +1009,6 @@ function updateMovement(delta) {
   const hasInput = fwd !== 0 || right !== 0;
   const smoothing = Math.min(delta * (hasInput ? 14 : 10), 1);
   smoothedMoveVelocity.lerp(targetVelocity, smoothing);
-  camera.position.addScaledVector(smoothedMoveVelocity, delta);
 
   state.verticalVelocity -= state.gravity * delta;
   camera.position.y += state.verticalVelocity * delta;
@@ -963,9 +1021,9 @@ function updateMovement(delta) {
     state.verticalVelocity = 0;
     state.onGround = true;
   }
-  resolveHorizontalCollisions(previousPos);
+  resolveHorizontalMovement(previousPos, delta);
 
-  const lim = 90;
+  const lim = MAP_HALF_SIZE;
   camera.position.x = THREE.MathUtils.clamp(camera.position.x, -lim, lim);
   camera.position.z = THREE.MathUtils.clamp(camera.position.z, -lim, lim);
 
@@ -974,43 +1032,37 @@ function updateMovement(delta) {
   state.movementBlend = THREE.MathUtils.lerp(state.movementBlend, isMoving, Math.min(delta * 12, 1));
 }
 
-function resolveHorizontalCollisions(previousPos) {
+function resolveHorizontalMovement(previousPos, delta) {
   const playerBottom = camera.position.y - state.playerHeight;
   const playerTop = camera.position.y + 0.25;
+  const desiredX = previousPos.x + smoothedMoveVelocity.x * delta;
+  const desiredZ = previousPos.z + smoothedMoveVelocity.z * delta;
 
+  camera.position.x = desiredX;
+  camera.position.z = previousPos.z;
+  if (isCollidingAt(camera.position.x, camera.position.z, playerBottom, playerTop)) {
+    camera.position.x = previousPos.x;
+    smoothedMoveVelocity.x = 0;
+  }
+
+  camera.position.z = desiredZ;
+  if (isCollidingAt(camera.position.x, camera.position.z, playerBottom, playerTop)) {
+    camera.position.z = previousPos.z;
+    smoothedMoveVelocity.z = 0;
+  }
+}
+
+function isCollidingAt(x, z, playerBottom, playerTop) {
   for (const box of staticBlockColliders) {
     if (playerTop <= box.min.y || playerBottom >= box.max.y) continue;
-
-    const closestX = THREE.MathUtils.clamp(camera.position.x, box.min.x, box.max.x);
-    const closestZ = THREE.MathUtils.clamp(camera.position.z, box.min.z, box.max.z);
-    const deltaX = camera.position.x - closestX;
-    const deltaZ = camera.position.z - closestZ;
+    const closestX = THREE.MathUtils.clamp(x, box.min.x, box.max.x);
+    const closestZ = THREE.MathUtils.clamp(z, box.min.z, box.max.z);
+    const deltaX = x - closestX;
+    const deltaZ = z - closestZ;
     const distSq = deltaX * deltaX + deltaZ * deltaZ;
-    const radiusSq = playerCollisionRadius * playerCollisionRadius;
-    if (distSq >= radiusSq) continue;
-
-    if (distSq > 0.000001) {
-      const dist = Math.sqrt(distSq);
-      const push = playerCollisionRadius - dist;
-      camera.position.x += (deltaX / dist) * push;
-      camera.position.z += (deltaZ / dist) * push;
-      continue;
-    }
-
-    const penetrationX = Math.min(
-      Math.abs(camera.position.x - box.min.x),
-      Math.abs(box.max.x - camera.position.x)
-    );
-    const penetrationZ = Math.min(
-      Math.abs(camera.position.z - box.min.z),
-      Math.abs(box.max.z - camera.position.z)
-    );
-    if (penetrationX < penetrationZ) {
-      camera.position.x = previousPos.x < camera.position.x ? box.max.x + playerCollisionRadius : box.min.x - playerCollisionRadius;
-    } else {
-      camera.position.z = previousPos.z < camera.position.z ? box.max.z + playerCollisionRadius : box.min.z - playerCollisionRadius;
-    }
+    if (distSq < playerCollisionRadius * playerCollisionRadius) return true;
   }
+  return false;
 }
 
 function getGroundHeightAt(x, z, feetY = 0) {
@@ -1138,8 +1190,9 @@ function shoot() {
       range: stats.range,
       bulletSpeed: stats.bulletSpeed
     });
-    spawnBulletVisual(muzzleOrigin, direction, true, stats.bulletSpeed);
-    traceImpact(aimOrigin, direction, stats.range, true, stats.damage);
+    const impact = traceImpact(aimOrigin, direction, stats.range, true, stats.damage);
+    const maxTravel = impact?.distance || stats.range;
+    spawnBulletVisual(muzzleOrigin, direction, true, stats.bulletSpeed, maxTravel);
   }
   spawnMuzzleFlash(muzzleOrigin);
 
@@ -1155,7 +1208,7 @@ function shoot() {
   }
 }
 
-function spawnBulletVisual(origin, direction, localShot, bulletSpeed) {
+function spawnBulletVisual(origin, direction, localShot, bulletSpeed, maxTravelDistance = 120) {
   const bulletMesh = new THREE.Mesh(
     new THREE.SphereGeometry(localShot ? 0.035 : 0.03, 8, 8),
     new THREE.MeshBasicMaterial({ color: localShot ? 0xffde59 : 0xff9aaf })
@@ -1177,7 +1230,9 @@ function spawnBulletVisual(origin, direction, localShot, bulletSpeed) {
     mesh: bulletMesh,
     trail,
     velocity: new THREE.Vector3(direction.x, direction.y, direction.z).multiplyScalar(bulletSpeed),
-    life: Math.max(0.1, Math.min(2.2, 95 / Math.max(1, bulletSpeed)))
+    life: Math.max(0.1, Math.min(2.2, 95 / Math.max(1, bulletSpeed))),
+    distanceTravelled: 0,
+    maxDistance: Math.max(0.2, Number(maxTravelDistance) || 120)
   });
 }
 
@@ -1203,7 +1258,7 @@ function traceImpact(origin, direction, maxDistance = 120, reportHit = false, da
     if (hitbox) targets.push(hitbox);
   });
   const hit = raycaster.intersectObjects(targets, false)[0];
-  if (!hit) return;
+  if (!hit) return null;
 
   const impactPos = hit.point.clone();
   if (hit.face?.normal) {
@@ -1218,10 +1273,13 @@ function traceImpact(origin, direction, maxDistance = 120, reportHit = false, da
   scene.add(impact);
   impacts.push({ mesh: impact, life: 0.16 });
 
-  if (!reportHit || !state.ws || state.ws.readyState !== WebSocket.OPEN) return;
+  if (!reportHit || !state.ws || state.ws.readyState !== WebSocket.OPEN) return hit;
   const hitPlayerId = hit.object?.userData?.playerId;
-  if (!hitPlayerId) return;
-  if (hitPlayerId === state.playerId) return;
+  if (!hitPlayerId) return hit;
+  if (hitPlayerId === state.playerId) return hit;
+  const hitRemote = remoteMeshes.get(hitPlayerId);
+  if (hitRemote?.team && state.team && hitRemote.team === state.team) return hit;
+  triggerHitmarker();
   state.ws.send(
     JSON.stringify({
       type: "player:hit",
@@ -1229,6 +1287,7 @@ function traceImpact(origin, direction, maxDistance = 120, reportHit = false, da
       damage: Math.max(1, Number(damage) || 1)
     })
   );
+  return hit;
 }
 
 function updateBullets(delta) {
@@ -1238,10 +1297,12 @@ function updateBullets(delta) {
     const prev = bullet.mesh.position.clone();
     bullet.mesh.position.addScaledVector(bullet.velocity, delta);
     bullet.trail.geometry.setFromPoints([prev, bullet.mesh.position.clone()]);
+    bullet.distanceTravelled += prev.distanceTo(bullet.mesh.position);
 
     const p = bullet.mesh.position;
     const outBounds = Math.abs(p.x) > 120 || Math.abs(p.z) > 120 || p.y < 0 || p.y > 50;
-    if (bullet.life <= 0 || outBounds) {
+    const reachedMaxDistance = bullet.distanceTravelled >= bullet.maxDistance;
+    if (bullet.life <= 0 || outBounds || reachedMaxDistance) {
       scene.remove(bullet.mesh);
       scene.remove(bullet.trail);
       bullet.mesh.geometry.dispose();

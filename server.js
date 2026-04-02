@@ -17,9 +17,14 @@ const MAX_HEALTH = 100;
 const RESPAWN_DELAY_MS = 3200;
 const ENABLE_DEV_BOT = process.env.DEV_BOT === "1" || process.env.NODE_ENV !== "production";
 const DEV_BOT_FIRE_INTERVAL_MS = 220;
+const DEV_BOT_MOVE_INTERVAL_MS = 60;
 const DEV_BOT_BULLET_SPEED = 70;
 const DEV_BOT_RANGE = 90;
 const DEV_BOT_DAMAGE = 8;
+const DEV_BOT_TRAJECTORY_RADIUS = 2.2;
+const DEV_BOT_TRAJECTORY_SPEED = 1.1;
+const SPAWN_MARGIN = 4;
+const MAP_HALF_SIZE = 40;
 const rooms = new Map();
 
 app.use(express.static(path.join(__dirname, "public")));
@@ -43,6 +48,9 @@ function createRoom(id) {
       deaths: 0,
       position: { x: 0, y: 0, z: 0 },
       direction: { x: 1, y: 0, z: 0 },
+      center: { x: 0, y: 0, z: 0 },
+      phase: Math.random() * Math.PI * 2,
+      rotationY: 0,
       timer: null
     }
   });
@@ -96,9 +104,20 @@ function pickTeam(room) {
   return null;
 }
 
+function getTeamCounts(room) {
+  let alpha = 0;
+  let bravo = 0;
+  room.players.forEach((playerWs) => {
+    if (playerWs.meta?.team === "alpha") alpha += 1;
+    else if (playerWs.meta?.team === "bravo") bravo += 1;
+  });
+  return { alpha, bravo };
+}
+
 function getSpawnPosition() {
-  const x = (Math.random() - 0.5) * 120;
-  const z = (Math.random() - 0.5) * 120;
+  const half = MAP_HALF_SIZE - SPAWN_MARGIN;
+  const x = (Math.random() - 0.5) * half * 2;
+  const z = (Math.random() - 0.5) * half * 2;
   return { x, y: 0, z };
 }
 
@@ -148,6 +167,9 @@ function startDevBot(room) {
 
   const origin = getSpawnPosition();
   room.devBot.position = { ...origin };
+  room.devBot.center = { ...origin };
+  room.devBot.phase = Math.random() * Math.PI * 2;
+  room.devBot.rotationY = 0;
   sendToRoom(room.id, {
     type: "player:update",
     id: room.devBot.id,
@@ -157,11 +179,34 @@ function startDevBot(room) {
     health: room.devBot.health,
     alive: room.devBot.alive,
     position: room.devBot.position,
-    rotationY: 0
+    rotationY: room.devBot.rotationY
   });
 
   room.devBot.timer = setInterval(() => {
     if (room.players.size === 0) return;
+    room.devBot.phase += DEV_BOT_TRAJECTORY_SPEED * (DEV_BOT_MOVE_INTERVAL_MS / 1000);
+    const angle = room.devBot.phase;
+    const x = room.devBot.center.x + Math.cos(angle) * DEV_BOT_TRAJECTORY_RADIUS;
+    const z = room.devBot.center.z + Math.sin(angle) * DEV_BOT_TRAJECTORY_RADIUS;
+    const tangentX = -Math.sin(angle);
+    const tangentZ = Math.cos(angle);
+    const dirLength = Math.hypot(tangentX, tangentZ) || 1;
+    room.devBot.direction = { x: tangentX / dirLength, y: 0, z: tangentZ / dirLength };
+    room.devBot.rotationY = Math.atan2(room.devBot.direction.x, room.devBot.direction.z);
+    room.devBot.position = { x, y: room.devBot.center.y, z };
+
+    sendToRoom(room.id, {
+      type: "player:update",
+      id: room.devBot.id,
+      name: room.devBot.name,
+      team: room.devBot.team,
+      weapon: room.devBot.weapon,
+      health: room.devBot.health,
+      alive: room.devBot.alive,
+      position: room.devBot.position,
+      rotationY: room.devBot.rotationY
+    });
+
     const shot = {
       direction: room.devBot.direction,
       damage: DEV_BOT_DAMAGE,
@@ -175,7 +220,7 @@ function startDevBot(room) {
       weapon: room.devBot.weapon,
       shots: [shot]
     });
-  }, DEV_BOT_FIRE_INTERVAL_MS);
+  }, DEV_BOT_MOVE_INTERVAL_MS);
 }
 
 function stopDevBot(room) {
@@ -286,6 +331,30 @@ wss.on("connection", (ws) => {
         } else {
           sendRoomPlayers(ws.meta.roomId);
         }
+      }
+      return;
+    }
+
+    if (msg.type === "team:select") {
+      if (!ws.meta.roomId) return;
+      const room = rooms.get(ws.meta.roomId);
+      if (!room) return;
+      const requestedTeam = msg.team === "alpha" || msg.team === "bravo" ? msg.team : null;
+      if (!requestedTeam) return;
+      if (requestedTeam === ws.meta.team) return;
+
+      const counts = getTeamCounts(room);
+      const targetCount = requestedTeam === "alpha" ? counts.alpha : counts.bravo;
+      if (targetCount >= TEAM_SIZE) {
+        ws.send(JSON.stringify({ type: "room:error", message: "Equipe pleine" }));
+        return;
+      }
+
+      ws.meta.team = requestedTeam;
+      if (ws.meta.alive) {
+        killAndScheduleRespawn(ws, null);
+      } else {
+        sendRoomPlayers(ws.meta.roomId);
       }
       return;
     }
