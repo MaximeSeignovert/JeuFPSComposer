@@ -181,12 +181,13 @@ wss.on("connection", (ws) => {
     }
 
     if (msg.type === "player:shoot" && ws.meta.roomId) {
-      if (!msg.origin || !msg.direction) return;
+      if (!msg.origin || !Array.isArray(msg.shots) || msg.shots.length === 0) return;
       sendToRoom(ws.meta.roomId, {
         type: "player:shoot",
         id: ws.meta.id,
         origin: msg.origin,
-        direction: msg.direction
+        weapon: ws.meta.weapon,
+        shots: msg.shots
       });
     }
   });

@@ -21,8 +21,47 @@ const state = {
   onGround: true,
   movementBlend: 0,
   lastShotAt: 0,
+  isFiring: false,
+  isAiming: false,
   joined: false,
   pauseOpen: false
+};
+
+const BASE_FOV = 74;
+const WEAPON_STATS = {
+  shotgun: {
+    label: "Fusil a pompe",
+    fireRate: 1.1,
+    pellets: 4,
+    spread: 0.08,
+    damage: 70,
+    range: 26,
+    bulletSpeed: 52,
+    auto: false,
+    zoomFov: BASE_FOV
+  },
+  ak47: {
+    label: "AK47",
+    fireRate: 9,
+    pellets: 1,
+    spread: 0.014,
+    damage: 28,
+    range: 62,
+    bulletSpeed: 70,
+    auto: true,
+    zoomFov: BASE_FOV
+  },
+  sniper: {
+    label: "Sniper",
+    fireRate: 0.9,
+    pellets: 1,
+    spread: 0.001,
+    damage: 120,
+    range: 140,
+    bulletSpeed: 95,
+    auto: false,
+    zoomFov: 28
+  }
 };
 
 const menu = document.getElementById("menu");
@@ -47,12 +86,7 @@ const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x111823);
 scene.fog = new THREE.Fog(0x111823, 25, 90);
 
-const camera = new THREE.PerspectiveCamera(
-  74,
-  window.innerWidth / window.innerHeight,
-  0.1,
-  1000
-);
+const camera = new THREE.PerspectiveCamera(BASE_FOV, window.innerWidth / window.innerHeight, 0.1, 1000);
 camera.position.set(0, state.playerHeight, 0);
 scene.add(camera);
 
@@ -86,17 +120,153 @@ for (let i = 0; i < 26; i += 1) {
   worldColliders.push(wall);
 }
 
-const remoteMaterial = new THREE.MeshStandardMaterial({ color: 0xff607f });
 const localMaterial = new THREE.MeshStandardMaterial({ color: 0x45e0a8 });
 const remoteMeshes = new Map();
 
 function createPlayerMesh(isLocal = false) {
-  const mesh = new THREE.Mesh(
+  if (isLocal) {
+    const localMesh = new THREE.Mesh(new THREE.CapsuleGeometry(0.35, 1.1, 6, 10), localMaterial);
+    localMesh.position.y = 1.2;
+    return localMesh;
+  }
+
+  const root = new THREE.Group();
+  root.position.y = 0;
+
+  const skinMaterial = new THREE.MeshStandardMaterial({ color: 0xd9ad84, roughness: 0.78 });
+  const shirtMaterial = new THREE.MeshStandardMaterial({ color: 0x4f8cf6, roughness: 0.75 });
+  const pantMaterial = new THREE.MeshStandardMaterial({ color: 0x1e2f4f, roughness: 0.88 });
+  const shoeMaterial = new THREE.MeshStandardMaterial({ color: 0x111317, roughness: 0.95 });
+
+  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.68, 0.26), shirtMaterial);
+  torso.position.set(0, 1.44, 0);
+  root.add(torso);
+
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.2, 18, 14), skinMaterial);
+  head.position.set(0, 1.95, 0);
+  root.add(head);
+
+  const armGeo = new THREE.CapsuleGeometry(0.09, 0.34, 5, 10);
+  const leftArm = new THREE.Mesh(armGeo, skinMaterial);
+  leftArm.position.set(-0.33, 1.45, 0);
+  leftArm.rotation.z = 0.1;
+  root.add(leftArm);
+
+  const rightArm = new THREE.Mesh(armGeo, skinMaterial);
+  rightArm.position.set(0.33, 1.45, 0);
+  rightArm.rotation.z = -0.1;
+  root.add(rightArm);
+
+  const legGeo = new THREE.CapsuleGeometry(0.1, 0.42, 5, 10);
+  const leftLeg = new THREE.Mesh(legGeo, pantMaterial);
+  leftLeg.position.set(-0.13, 0.82, 0);
+  root.add(leftLeg);
+
+  const rightLeg = new THREE.Mesh(legGeo, pantMaterial);
+  rightLeg.position.set(0.13, 0.82, 0);
+  root.add(rightLeg);
+
+  const shoeGeo = new THREE.BoxGeometry(0.14, 0.08, 0.22);
+  const leftShoe = new THREE.Mesh(shoeGeo, shoeMaterial);
+  leftShoe.position.set(-0.13, 0.52, 0.04);
+  root.add(leftShoe);
+
+  const rightShoe = new THREE.Mesh(shoeGeo, shoeMaterial);
+  rightShoe.position.set(0.13, 0.52, 0.04);
+  root.add(rightShoe);
+
+  const hitbox = new THREE.Mesh(
     new THREE.CapsuleGeometry(0.35, 1.1, 6, 10),
-    isLocal ? localMaterial : remoteMaterial
+    new THREE.MeshBasicMaterial({ visible: false })
   );
-  mesh.position.y = 1.2;
-  return mesh;
+  hitbox.position.y = 1.2;
+  hitbox.visible = false;
+  root.add(hitbox);
+
+  const nameTag = createNameTagSprite("Player");
+  nameTag.position.set(0, 2.45, 0);
+  root.add(nameTag);
+
+  root.userData.hitbox = hitbox;
+  root.userData.nameTag = nameTag;
+  root.userData.materials = { shirtMaterial };
+  return root;
+}
+
+function createNameTagSprite(name) {
+  const canvasTag = document.createElement("canvas");
+  canvasTag.width = 512;
+  canvasTag.height = 128;
+  const ctx = canvasTag.getContext("2d");
+  const texture = new THREE.CanvasTexture(canvasTag);
+  texture.minFilter = THREE.LinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.generateMipmaps = false;
+
+  const spriteMaterial = new THREE.SpriteMaterial({
+    map: texture,
+    transparent: true,
+    depthTest: false
+  });
+  const sprite = new THREE.Sprite(spriteMaterial);
+  sprite.scale.set(1.9, 0.46, 1);
+  sprite.renderOrder = 9;
+  sprite.userData = { canvas: canvasTag, ctx, texture, currentName: "", currentTeam: null };
+  updateNameTagSprite(sprite, name, null);
+  return sprite;
+}
+
+function updateNameTagSprite(sprite, name, team) {
+  if (!sprite?.userData?.ctx) return;
+  const safeName = String(name || "Player").slice(0, 20);
+  if (sprite.userData.currentName === safeName && sprite.userData.currentTeam === team) return;
+
+  sprite.userData.currentName = safeName;
+  sprite.userData.currentTeam = team;
+
+  const { canvas: canvasTag, ctx, texture } = sprite.userData;
+  ctx.clearRect(0, 0, canvasTag.width, canvasTag.height);
+
+  const bgColor = team === "alpha" ? "rgba(53, 119, 255, 0.85)" : team === "bravo" ? "rgba(255, 95, 122, 0.85)" : "rgba(22, 26, 32, 0.85)";
+  ctx.fillStyle = bgColor;
+  roundRect(ctx, 10, 18, canvasTag.width - 20, 94, 26);
+  ctx.fill();
+
+  ctx.strokeStyle = "rgba(255,255,255,0.35)";
+  ctx.lineWidth = 4;
+  roundRect(ctx, 10, 18, canvasTag.width - 20, 94, 26);
+  ctx.stroke();
+
+  ctx.font = "700 46px Arial, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = "#ffffff";
+  ctx.fillText(safeName, canvasTag.width / 2, canvasTag.height / 2 + 1);
+
+  texture.needsUpdate = true;
+}
+
+function roundRect(ctx, x, y, width, height, radius) {
+  const r = Math.max(0, Math.min(radius, width * 0.5, height * 0.5));
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + width - r, y);
+  ctx.quadraticCurveTo(x + width, y, x + width, y + r);
+  ctx.lineTo(x + width, y + height - r);
+  ctx.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
+  ctx.lineTo(x + r, y + height);
+  ctx.quadraticCurveTo(x, y + height, x, y + height - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+function applyRemoteTeamStyle(root, team) {
+  const shirtMaterial = root?.userData?.materials?.shirtMaterial;
+  if (!shirtMaterial) return;
+  if (team === "alpha") shirtMaterial.color.setHex(0x3f79f0);
+  else if (team === "bravo") shirtMaterial.color.setHex(0xdc5f85);
+  else shirtMaterial.color.setHex(0x4f8cf6);
 }
 
 const localBody = createPlayerMesh(true);
@@ -191,25 +361,36 @@ function connect() {
     if (msg.type === "player:update") {
       if (!msg.id) return;
       if (msg.id === state.playerId) return;
-      let mesh = remoteMeshes.get(msg.id);
-      if (!mesh) {
-        mesh = createPlayerMesh(false);
-        scene.add(mesh);
-        remoteMeshes.set(msg.id, mesh);
+      let remotePlayer = remoteMeshes.get(msg.id);
+      if (!remotePlayer) {
+        const root = createPlayerMesh(false);
+        scene.add(root);
+        remotePlayer = { root };
+        remoteMeshes.set(msg.id, remotePlayer);
       }
       if (msg.position) {
-        mesh.position.set(msg.position.x, msg.position.y, msg.position.z);
-        mesh.rotation.y = msg.rotationY || 0;
+        remotePlayer.root.position.set(msg.position.x, msg.position.y - 0.5, msg.position.z);
+        remotePlayer.root.rotation.y = msg.rotationY || 0;
+      }
+      if (msg.name || msg.team) {
+        const nameTag = remotePlayer.root.userData.nameTag;
+        updateNameTagSprite(nameTag, msg.name || "Player", msg.team || null);
+        applyRemoteTeamStyle(remotePlayer.root, msg.team);
       }
       return;
     }
 
     if (msg.type === "player:shoot") {
       if (!msg.id || msg.id === state.playerId) return;
-      if (!msg.origin || !msg.direction) return;
+      if (!msg.origin || !Array.isArray(msg.shots)) return;
       spawnMuzzleFlash(msg.origin);
-      spawnBulletVisual(msg.origin, msg.direction, false);
-      traceImpact(msg.origin, msg.direction);
+      msg.shots.forEach((shot) => {
+        if (!shot?.direction) return;
+        const range = Number(shot.range) || 80;
+        const bulletSpeed = Number(shot.bulletSpeed) || 68;
+        spawnBulletVisual(msg.origin, shot.direction, false, bulletSpeed);
+        traceImpact(msg.origin, shot.direction, range);
+      });
     }
   });
 }
@@ -253,6 +434,8 @@ function setPauseMenu(open) {
   crosshair.classList.toggle("hidden", open);
   if (open) {
     state.keys.clear();
+    state.isFiring = false;
+    state.isAiming = false;
     if (document.pointerLockElement === canvas) {
       document.exitPointerLock();
     }
@@ -264,12 +447,42 @@ function togglePauseMenu() {
 }
 
 function weaponLabel(w) {
-  if (w === "shotgun") return "Fusil a pompe";
-  if (w === "sniper") return "Sniper";
-  return "AK47";
+  return WEAPON_STATS[w]?.label || WEAPON_STATS.ak47.label;
+}
+
+function getWeaponStats(weapon = state.weapon) {
+  return WEAPON_STATS[weapon] || WEAPON_STATS.ak47;
+}
+
+function updateZoomState() {
+  const stats = getWeaponStats();
+  const shouldZoom = state.isAiming && state.weapon === "sniper" && !state.pauseOpen;
+  const targetFov = shouldZoom ? stats.zoomFov : BASE_FOV;
+  camera.fov = THREE.MathUtils.lerp(camera.fov, targetFov, 0.2);
+  camera.updateProjectionMatrix();
 }
 
 function updatePlayerList(players) {
+  const remoteIds = new Set(players.filter((p) => p.id !== state.playerId).map((p) => p.id));
+  remoteMeshes.forEach((remotePlayer, id) => {
+    if (remoteIds.has(id)) return;
+    scene.remove(remotePlayer.root);
+    remoteMeshes.delete(id);
+  });
+
+  players.forEach((p) => {
+    if (!p.id || p.id === state.playerId) return;
+    let remotePlayer = remoteMeshes.get(p.id);
+    if (!remotePlayer) {
+      const root = createPlayerMesh(false);
+      scene.add(root);
+      remotePlayer = { root };
+      remoteMeshes.set(p.id, remotePlayer);
+    }
+    updateNameTagSprite(remotePlayer.root.userData.nameTag, p.name || "Player", p.team || null);
+    applyRemoteTeamStyle(remotePlayer.root, p.team);
+  });
+
   const html = players
     .map((p) => `<li>${p.name} - ${p.team} - ${weaponLabel(p.weapon)}</li>`)
     .join("");
@@ -281,6 +494,7 @@ weaponChoice.addEventListener("click", (event) => {
   if (!target) return;
   const weapon = target.getAttribute("data-weapon");
   state.weapon = weapon;
+  state.isAiming = false;
   weaponChoice.querySelectorAll("button").forEach((b) => b.classList.remove("active"));
   target.classList.add("active");
   hudWeapon.textContent = `Arme: ${weaponLabel(weapon)}`;
@@ -308,6 +522,9 @@ document.addEventListener("keydown", (e) => {
   }
 });
 document.addEventListener("keyup", (e) => state.keys.delete(e.code));
+document.addEventListener("contextmenu", (e) => {
+  if (state.joined) e.preventDefault();
+});
 document.addEventListener("mousemove", (e) => {
   if (!state.joined || document.pointerLockElement !== canvas) return;
   state.yaw -= e.movementX * 0.0025;
@@ -330,14 +547,23 @@ canvas.addEventListener("click", () => {
 canvas.addEventListener("mousedown", (event) => {
   if (event.button !== 0) return;
   if (!state.joined || state.pauseOpen || document.pointerLockElement !== canvas) return;
+  const stats = getWeaponStats();
   state.isFiring = true;
   shoot();
+  if (!stats.auto) state.isFiring = false;
+});
+canvas.addEventListener("mousedown", (event) => {
+  if (event.button !== 2) return;
+  if (!state.joined || state.pauseOpen) return;
+  state.isAiming = true;
 });
 canvas.addEventListener("mouseup", (event) => {
   if (event.button === 0) state.isFiring = false;
+  if (event.button === 2) state.isAiming = false;
 });
 window.addEventListener("blur", () => {
   state.isFiring = false;
+  state.isAiming = false;
 });
 resumeBtn.addEventListener("click", () => {
   setPauseMenu(false);
@@ -401,9 +627,15 @@ function animate() {
   requestAnimationFrame(animate);
   const delta = clock.getDelta();
 
+  updateZoomState();
   camera.rotation.set(state.pitch, state.yaw, 0, "YXZ");
   updateMovement(delta);
-  if (state.isFiring && !state.pauseOpen && document.pointerLockElement === canvas) {
+  if (
+    state.isFiring &&
+    getWeaponStats().auto &&
+    !state.pauseOpen &&
+    document.pointerLockElement === canvas
+  ) {
     shoot();
   }
   animateViewModel(delta);
@@ -426,29 +658,52 @@ function animateViewModel(delta) {
 }
 
 function shoot() {
+  const stats = getWeaponStats();
   const now = performance.now();
-  const msBetweenShots = 1000 / state.fireRate;
+  const msBetweenShots = 1000 / stats.fireRate;
   if (now - state.lastShotAt < msBetweenShots) return;
   state.lastShotAt = now;
 
   const muzzle = viewModel.userData.muzzle;
   const spawnPos = new THREE.Vector3();
-  const shotDir = new THREE.Vector3();
   muzzle.getWorldPosition(spawnPos);
-  camera.getWorldDirection(shotDir).normalize();
   const origin = { x: spawnPos.x, y: spawnPos.y, z: spawnPos.z };
-  const direction = { x: shotDir.x, y: shotDir.y, z: shotDir.z };
+  const baseDirection = new THREE.Vector3();
+  camera.getWorldDirection(baseDirection).normalize();
+  const shots = [];
 
+  for (let i = 0; i < stats.pellets; i += 1) {
+    const spreadX = (Math.random() - 0.5) * stats.spread;
+    const spreadY = (Math.random() - 0.5) * stats.spread;
+    const shotDirection = baseDirection
+      .clone()
+      .add(new THREE.Vector3(spreadX, spreadY, 0))
+      .normalize();
+    const direction = { x: shotDirection.x, y: shotDirection.y, z: shotDirection.z };
+    shots.push({
+      direction,
+      damage: stats.damage,
+      range: stats.range,
+      bulletSpeed: stats.bulletSpeed
+    });
+    spawnBulletVisual(origin, direction, true, stats.bulletSpeed);
+    traceImpact(origin, direction, stats.range);
+  }
   spawnMuzzleFlash(origin);
-  spawnBulletVisual(origin, direction, true);
-  traceImpact(origin, direction);
 
   if (state.ws && state.ws.readyState === WebSocket.OPEN) {
-    state.ws.send(JSON.stringify({ type: "player:shoot", origin, direction }));
+    state.ws.send(
+      JSON.stringify({
+        type: "player:shoot",
+        origin,
+        weapon: state.weapon,
+        shots
+      })
+    );
   }
 }
 
-function spawnBulletVisual(origin, direction, localShot) {
+function spawnBulletVisual(origin, direction, localShot, bulletSpeed) {
   const bulletMesh = new THREE.Mesh(
     new THREE.SphereGeometry(localShot ? 0.035 : 0.03, 8, 8),
     new THREE.MeshBasicMaterial({ color: localShot ? 0xffde59 : 0xff9aaf })
@@ -469,8 +724,8 @@ function spawnBulletVisual(origin, direction, localShot) {
   bullets.push({
     mesh: bulletMesh,
     trail,
-    velocity: new THREE.Vector3(direction.x, direction.y, direction.z).multiplyScalar(state.bulletSpeed),
-    life: state.bulletLife
+    velocity: new THREE.Vector3(direction.x, direction.y, direction.z).multiplyScalar(bulletSpeed),
+    life: Math.max(0.1, Math.min(2.2, 95 / Math.max(1, bulletSpeed)))
   });
 }
 
@@ -484,13 +739,17 @@ function spawnMuzzleFlash(position) {
   flashes.push({ mesh: flash, life: 0.06 });
 }
 
-function traceImpact(origin, direction) {
+function traceImpact(origin, direction, maxDistance = 120) {
   const rayOrigin = new THREE.Vector3(origin.x, origin.y, origin.z);
   const rayDir = new THREE.Vector3(direction.x, direction.y, direction.z).normalize();
   raycaster.set(rayOrigin, rayDir);
-  raycaster.far = 120;
+  raycaster.far = maxDistance;
 
-  const targets = [...worldColliders, ...remoteMeshes.values()];
+  const targets = [...worldColliders];
+  remoteMeshes.forEach((remotePlayer) => {
+    const hitbox = remotePlayer.root?.userData?.hitbox;
+    if (hitbox) targets.push(hitbox);
+  });
   const hit = raycaster.intersectObjects(targets, false)[0];
   if (!hit) return;
 
