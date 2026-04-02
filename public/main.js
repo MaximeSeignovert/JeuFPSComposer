@@ -290,7 +290,7 @@ function addJumpPad(x, z, color = 0x5fe1ff) {
 
   pad.position.set(x, 0, z);
   scene.add(pad);
-  jumpPads.push({ x, z, radius: 1.8, boost: 11.8, ring, core });
+  jumpPads.push({ x, z, radius: 1.8, boost: 17.2, ring, core });
   mapAnimators.push((time) => {
     const pulse = 0.6 + (Math.sin(time * 4 + x * 0.1 + z * 0.08) + 1) * 0.45;
     ring.material.emissiveIntensity = 0.8 + pulse;
@@ -1249,7 +1249,10 @@ function resolveHorizontalMovement(previousPos, delta) {
 }
 
 function isCollidingAt(x, z, playerBottom, playerTop) {
+  const standTolerance = 0.12;
   for (const box of staticBlockColliders) {
+    // Allow movement when the player is standing on top of a block.
+    if (playerBottom >= box.max.y - standTolerance) continue;
     if (playerTop <= box.min.y || playerBottom >= box.max.y) continue;
     const closestX = THREE.MathUtils.clamp(x, box.min.x, box.max.x);
     const closestZ = THREE.MathUtils.clamp(z, box.min.z, box.max.z);
@@ -1264,13 +1267,17 @@ function isCollidingAt(x, z, playerBottom, playerTop) {
 function getGroundHeightAt(x, z, feetY = 0) {
   const rampSnapTolerance = 0.2;
   const platformSnapTolerance = 0.35;
+  const blockSnapTolerance = 0.28;
   const halfPlatformW = mapConfig.platform.width / 2;
   const halfPlatformD = mapConfig.platform.depth / 2;
   const halfRampD = mapConfig.ramp.depth / 2;
   const halfRampW = mapConfig.ramp.width / 2;
+  let bestGround = 0;
 
   if (Math.abs(x) <= halfPlatformW && Math.abs(z) <= halfPlatformD) {
-    return feetY >= mapConfig.platform.topY - platformSnapTolerance ? mapConfig.platform.topY : 0;
+    if (feetY >= mapConfig.platform.topY - platformSnapTolerance) {
+      bestGround = Math.max(bestGround, mapConfig.platform.topY);
+    }
   }
 
   const leftCenterX = -(halfPlatformW + halfRampW);
@@ -1281,7 +1288,9 @@ function getGroundHeightAt(x, z, feetY = 0) {
       mapConfig.ramp.baseY,
       mapConfig.ramp.topY
     );
-    return feetY >= rampHeight - rampSnapTolerance ? rampHeight : 0;
+    if (feetY >= rampHeight - rampSnapTolerance) {
+      bestGround = Math.max(bestGround, rampHeight);
+    }
   }
 
   const rightCenterX = halfPlatformW + halfRampW;
@@ -1296,10 +1305,19 @@ function getGroundHeightAt(x, z, feetY = 0) {
       mapConfig.ramp.baseY,
       mapConfig.ramp.topY
     );
-    return feetY >= rampHeight - rampSnapTolerance ? rampHeight : 0;
+    if (feetY >= rampHeight - rampSnapTolerance) {
+      bestGround = Math.max(bestGround, rampHeight);
+    }
   }
 
-  return 0;
+  for (const box of staticBlockColliders) {
+    if (x < box.min.x || x > box.max.x || z < box.min.z || z > box.max.z) continue;
+    if (feetY >= box.max.y - blockSnapTolerance) {
+      bestGround = Math.max(bestGround, box.max.y);
+    }
+  }
+
+  return bestGround;
 }
 
 function findSafeSpawnPosition(spawn) {
