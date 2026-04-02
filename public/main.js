@@ -16,7 +16,7 @@ const state = {
   gravity: 26,
   jumpSpeed: 8.8,
   fireRate: 8,
-  bulletSpeed: 68,
+  bulletSpeed: 300,
   bulletLife: 1.1,
   verticalVelocity: 0,
   onGround: true,
@@ -43,7 +43,7 @@ const WEAPON_STATS = {
     spread: 0.07,
     damage: 14,
     range: 22,
-    bulletSpeed: 56,
+    bulletSpeed: 120,
     auto: false,
     zoomFov: BASE_FOV
   },
@@ -54,7 +54,7 @@ const WEAPON_STATS = {
     spread: 0.017,
     damage: 20,
     range: 58,
-    bulletSpeed: 72,
+    bulletSpeed: 145,
     auto: true,
     zoomFov: BASE_FOV
   },
@@ -65,7 +65,7 @@ const WEAPON_STATS = {
     spread: 0.002,
     damage: 92,
     range: 125,
-    bulletSpeed: 100,
+    bulletSpeed: 210,
     auto: false,
     zoomFov: 28
   }
@@ -80,6 +80,7 @@ const pauseMenu = document.getElementById("pauseMenu");
 const resumeBtn = document.getElementById("resumeBtn");
 const hud = document.getElementById("hud");
 const crosshair = document.getElementById("crosshair");
+const damageOverlay = document.getElementById("damageOverlay");
 const hitmarker = document.getElementById("hitmarker");
 const sniperScope = document.getElementById("sniperScope");
 const playerList = document.getElementById("playerList");
@@ -87,6 +88,7 @@ const hudRoom = document.getElementById("hudRoom");
 const hudTeam = document.getElementById("hudTeam");
 const hudWeapon = document.getElementById("hudWeapon");
 const hudHealth = document.getElementById("hudHealth");
+const hudHealthFill = document.getElementById("hudHealthFill");
 const respawnNotice = document.getElementById("respawnNotice");
 const canvas = document.getElementById("gameCanvas");
 
@@ -408,8 +410,14 @@ function setRemoteAliveVisual(root, alive) {
 }
 
 function updateHealthHud() {
-  hudHealth.textContent = `Vie: ${Math.max(0, Math.round(state.health))}`;
-  hudHealth.style.color = state.health <= 25 ? "#ff607f" : state.health <= 55 ? "#ffbf66" : "";
+  const clampedHealth = THREE.MathUtils.clamp(Math.round(state.health), 0, 100);
+  hudHealth.textContent = `Vie: ${clampedHealth}`;
+  hudHealth.style.color = clampedHealth <= 25 ? "#ff607f" : clampedHealth <= 55 ? "#ffbf66" : "";
+  if (hudHealthFill) {
+    const ratio = clampedHealth / 100;
+    hudHealthFill.style.transform = `scaleX(${ratio})`;
+    hudHealthFill.style.filter = clampedHealth <= 25 ? "brightness(0.85)" : "";
+  }
 }
 
 function updateTeamHud() {
@@ -451,6 +459,7 @@ const clock = new THREE.Clock();
 let lastNetworkSend = 0;
 const smoothedMoveVelocity = new THREE.Vector3();
 let hitmarkerTimer = null;
+let damageOverlayTimer = null;
 
 function triggerHitmarker() {
   if (!hitmarker) return;
@@ -463,6 +472,22 @@ function triggerHitmarker() {
     hitmarker.classList.remove("show");
     hitmarker.classList.add("hidden");
   }, 110);
+}
+
+function triggerDamageOverlay(damageAmount = 0) {
+  if (!damageOverlay) return;
+  const intensity = THREE.MathUtils.clamp((Number(damageAmount) || 0) / 45, 0.2, 0.65);
+  damageOverlay.style.opacity = String(intensity);
+  damageOverlay.classList.remove("hidden");
+  damageOverlay.classList.add("show");
+  if (damageOverlayTimer) {
+    clearTimeout(damageOverlayTimer);
+  }
+  damageOverlayTimer = setTimeout(() => {
+    damageOverlay.classList.remove("show");
+    damageOverlay.style.opacity = "";
+    damageOverlay.classList.add("hidden");
+  }, 220);
 }
 
 function createViewModel() {
@@ -697,7 +722,12 @@ function connect() {
     }
 
     if (msg.type === "player:health") {
+      const previousHealth = state.health;
       state.health = Number(msg.health) || 0;
+      const damageTaken = Math.max(0, previousHealth - state.health);
+      if (damageTaken > 0) {
+        triggerDamageOverlay(damageTaken);
+      }
       updateHealthHud();
       return;
     }
