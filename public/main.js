@@ -27,18 +27,28 @@ const state = {
   isAiming: false,
   health: 100,
   isAlive: true,
+  grenadesHeld: 0,
   respawnUntil: 0,
   respawnDelayMs: 3200,
   deathKillerId: null,
   deathKillerName: "",
   joined: false,
-  pauseOpen: false
+  pauseOpen: false,
+  grenadeSequence: 0,
+  lastGrenadePickupAttemptAt: 0,
+  viewRecoilZ: 0,
+  viewRecoilY: 0,
+  viewRecoilRotX: 0,
+  viewRecoilRotZ: 0
 };
 
 const BASE_FOV = 74;
 const PLAYER_NAME_STORAGE_KEY = "fps.playerName";
 const MAP_HALF_SIZE = 40;
 const REMOTE_INTERP_SPEED = 12;
+const VIEW_RECOIL_DECAY = 15;
+const VIEW_RECOIL_BOB_SUPPRESS_K = 0.48;
+const VIEW_RECOIL_NORM_CAP = 0.16;
 const WEAPON_STATS = {
   shotgun: {
     label: "Fusil a pompe",
@@ -49,7 +59,8 @@ const WEAPON_STATS = {
     range: 22,
     bulletSpeed: 120,
     auto: false,
-    zoomFov: BASE_FOV
+    zoomFov: BASE_FOV,
+    viewRecoil: { z: 0.135, y: -0.02, rotX: 0.078, rotZ: 0.05 }
   },
   ak47: {
     label: "AK47",
@@ -60,7 +71,8 @@ const WEAPON_STATS = {
     range: 58,
     bulletSpeed: 145,
     auto: true,
-    zoomFov: BASE_FOV
+    zoomFov: BASE_FOV,
+    viewRecoil: { z: 0.042, y: -0.006, rotX: 0.032, rotZ: 0.02 }
   },
   sniper: {
     label: "Sniper",
@@ -71,14 +83,28 @@ const WEAPON_STATS = {
     range: 125,
     bulletSpeed: 210,
     auto: false,
-    zoomFov: 28
+    zoomFov: 28,
+    viewRecoil: { z: 0.158, y: -0.014, rotX: 0.068, rotZ: 0.028 }
   }
+};
+const GRENADE_CONFIG = {
+  pickupRadius: 1.7,
+  radius: 0.18,
+  gravity: 24,
+  throwSpeed: 16,
+  fuseMs: 1600,
+  blastRadius: 8.5,
+  bounceDamping: 0.62,
+  friction: 0.84,
+  minVerticalBounce: 1.4,
+  minHorizontalSpeed: 0.2
 };
 
 const menu = document.getElementById("menu");
 const roomsList = document.getElementById("roomsList");
 const nameInput = document.getElementById("nameInput");
 const weaponChoice = document.getElementById("weaponChoice");
+const pauseMenuOverlay = document.getElementById("pauseMenuOverlay");
 const pauseMenu = document.getElementById("pauseMenu");
 const resumeBtn = document.getElementById("resumeBtn");
 const hud = document.getElementById("hud");
@@ -90,6 +116,8 @@ const playerList = document.getElementById("playerList");
 const hudRoom = document.getElementById("hudRoom");
 const hudTeam = document.getElementById("hudTeam");
 const hudWeapon = document.getElementById("hudWeapon");
+const hudWeaponName = document.getElementById("hudWeaponName");
+const hudGrenade = document.getElementById("hudGrenade");
 const hudHealth = document.getElementById("hudHealth");
 const hudHealthFill = document.getElementById("hudHealthFill");
 const respawnNotice = document.getElementById("respawnNotice");
@@ -157,6 +185,8 @@ const staticBlockColliders = [];
 const playerCollisionRadius = 0.34;
 const mapAnimators = [];
 const jumpPads = [];
+const grenadePickups = new Map();
+const grenadePickupMeshes = new Map();
 
 function addStaticWorldMesh(mesh, includePhysics = true) {
   scene.add(mesh);
@@ -336,6 +366,86 @@ addSpinnerProp(14, 14, 0xff8ad7);
 addSpinnerProp(-14, 14, 0xffd673);
 addSpinnerProp(14, -14, 0x8cff7b);
 
+function createGrenadePickupMesh() {
+  const group = new THREE.Group();
+
+  const body = new THREE.Mesh(
+    new THREE.SphereGeometry(0.18, 14, 12),
+    new THREE.MeshStandardMaterial({
+      color: 0x4d7f57,
+      roughness: 0.55,
+      metalness: 0.32
+    })
+  );
+  group.add(body);
+
+  const cap = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.035, 0.035, 0.1, 10),
+    new THREE.MeshStandardMaterial({ color: 0x2f3338, roughness: 0.45, metalness: 0.75 })
+  );
+  cap.position.y = 0.18;
+  group.add(cap);
+
+  const pin = new THREE.Mesh(
+    new THREE.TorusGeometry(0.06, 0.012, 8, 18),
+    new THREE.MeshStandardMaterial({ color: 0xe8df9f, roughness: 0.3, metalness: 0.82 })
+  );
+  pin.rotation.x = Math.PI / 2;
+  pin.position.set(0.07, 0.18, 0);
+  group.add(pin);
+
+  const glow = new THREE.Mesh(
+    new THREE.SphereGeometry(0.28, 14, 12),
+    new THREE.MeshBasicMaterial({ color: 0x9dff9e, transparent: true, opacity: 0.2 })
+  );
+  group.add(glow);
+
+  group.userData.baseY = 0.42;
+  group.userData.spinOffset = Math.random() * Math.PI * 2;
+  return group;
+}
+
+function syncGrenadePickups(pickups = []) {
+  const nextIds = new Set();
+
+  pickups.forEach((pickup) => {
+    if (!pickup?.id || !pickup.position) return;
+    nextIds.add(pickup.id);
+    grenadePickups.set(pickup.id, pickup);
+
+    let mesh = grenadePickupMeshes.get(pickup.id);
+    if (!mesh) {
+      mesh = createGrenadePickupMesh();
+      grenadePickupMeshes.set(pickup.id, mesh);
+      scene.add(mesh);
+    }
+
+    mesh.userData.baseY = (Number(pickup.position.y) || 0) + 0.42;
+    mesh.position.set(Number(pickup.position.x) || 0, mesh.userData.baseY, Number(pickup.position.z) || 0);
+    mesh.visible = pickup.available !== false;
+  });
+
+  grenadePickupMeshes.forEach((mesh, id) => {
+    if (nextIds.has(id)) return;
+    scene.remove(mesh);
+    mesh.traverse((child) => {
+      if (child.geometry) child.geometry.dispose();
+      if (child.material) child.material.dispose();
+    });
+    grenadePickupMeshes.delete(id);
+    grenadePickups.delete(id);
+  });
+}
+
+function updateGrenadePickupVisuals(time) {
+  grenadePickupMeshes.forEach((mesh) => {
+    if (!mesh.visible) return;
+    const t = time * 2 + mesh.userData.spinOffset;
+    mesh.rotation.y += 0.02;
+    mesh.position.y = mesh.userData.baseY + Math.sin(t) * 0.12;
+  });
+}
+
 const localMaterial = new THREE.MeshStandardMaterial({ color: 0x45e0a8 });
 const remoteMeshes = new Map();
 
@@ -349,47 +459,104 @@ function createPlayerMesh(isLocal = false) {
   const root = new THREE.Group();
   root.position.y = 0;
 
-  const skinMaterial = new THREE.MeshStandardMaterial({ color: 0xd9ad84, roughness: 0.78 });
-  const shirtMaterial = new THREE.MeshStandardMaterial({ color: 0x4f8cf6, roughness: 0.75 });
-  const pantMaterial = new THREE.MeshStandardMaterial({ color: 0x1e2f4f, roughness: 0.88 });
-  const shoeMaterial = new THREE.MeshStandardMaterial({ color: 0x111317, roughness: 0.95 });
+  const skinMaterial = new THREE.MeshStandardMaterial({ color: 0xd9ad84, roughness: 0.78, flatShading: true });
+  const shirtMaterial = new THREE.MeshStandardMaterial({ color: 0x4f8cf6, roughness: 0.75, flatShading: true });
+  const pantMaterial = new THREE.MeshStandardMaterial({ color: 0x1e2f4f, roughness: 0.88, flatShading: true });
+  const shoeMaterial = new THREE.MeshStandardMaterial({ color: 0x111317, roughness: 0.95, flatShading: true });
+  const accMaterial = new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.8, flatShading: true });
+  const visorMaterial = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.2, metalness: 0.8, flatShading: true });
 
-  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.68, 0.26), shirtMaterial);
-  torso.position.set(0, 1.44, 0);
-  root.add(torso);
+  const torsoGroup = new THREE.Group();
+  torsoGroup.position.set(0, 1.44, 0);
 
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.2, 18, 14), skinMaterial);
-  head.position.set(0, 1.95, 0);
-  root.add(head);
+  const chest = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.5, 0.3), shirtMaterial);
+  chest.position.y = 0.1;
+  torsoGroup.add(chest);
 
-  const armGeo = new THREE.CapsuleGeometry(0.09, 0.34, 5, 10);
-  const leftArm = new THREE.Mesh(armGeo, skinMaterial);
-  leftArm.position.set(-0.33, 1.45, 0);
-  leftArm.rotation.z = 0.1;
-  root.add(leftArm);
+  const abdomen = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.2, 0.25), shirtMaterial);
+  abdomen.position.y = -0.25;
+  torsoGroup.add(abdomen);
 
-  const rightArm = new THREE.Mesh(armGeo, skinMaterial);
-  rightArm.position.set(0.33, 1.45, 0);
-  rightArm.rotation.z = -0.1;
-  root.add(rightArm);
+  const belt = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.1, 0.28), accMaterial);
+  belt.position.y = -0.35;
+  torsoGroup.add(belt);
 
-  const legGeo = new THREE.CapsuleGeometry(0.1, 0.42, 5, 10);
+  const backpack = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.5, 0.2), accMaterial);
+  backpack.position.set(0, 0, -0.2);
+  torsoGroup.add(backpack);
+  
+  root.add(torsoGroup);
+
+  const headGroup = new THREE.Group();
+  headGroup.position.set(0, 1.95, 0);
+
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.3, 0.3), skinMaterial);
+  headGroup.add(head);
+
+  const helmet = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.15, 0.32), accMaterial);
+  helmet.position.y = 0.12;
+  headGroup.add(helmet);
+
+  const visor = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.1, 0.1), visorMaterial);
+  visor.position.set(0, 0, 0.15);
+  headGroup.add(visor);
+  
+  root.add(headGroup);
+
+  const armGeo = new THREE.BoxGeometry(0.15, 0.45, 0.15);
+  const handGeo = new THREE.BoxGeometry(0.12, 0.15, 0.12);
+  
+  const leftArmGroup = new THREE.Group();
+  leftArmGroup.position.set(-0.35, 1.65, 0);
+  const leftArm = new THREE.Mesh(armGeo, shirtMaterial);
+  leftArm.position.y = -0.225;
+  leftArmGroup.add(leftArm);
+  const leftHand = new THREE.Mesh(handGeo, skinMaterial);
+  leftHand.position.y = -0.525;
+  leftArmGroup.add(leftHand);
+  leftArmGroup.rotation.z = 0.1;
+  root.add(leftArmGroup);
+
+  const rightArmGroup = new THREE.Group();
+  rightArmGroup.position.set(0.35, 1.65, 0);
+  const rightArm = new THREE.Mesh(armGeo, shirtMaterial);
+  rightArm.position.y = -0.225;
+  rightArmGroup.add(rightArm);
+  const rightHand = new THREE.Mesh(handGeo, skinMaterial);
+  rightHand.position.y = -0.525;
+  rightArmGroup.add(rightHand);
+  
+  const gunMaterial = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.7, flatShading: true });
+  const gunBody = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.15, 0.45), gunMaterial);
+  gunBody.position.set(0, -0.525, 0.15);
+  rightArmGroup.add(gunBody);
+  const gunBarrel = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.04, 0.3), gunMaterial);
+  gunBarrel.position.set(0, -0.48, 0.45);
+  rightArmGroup.add(gunBarrel);
+  
+  rightArmGroup.rotation.z = -0.1;
+  root.add(rightArmGroup);
+
+  const legGeo = new THREE.BoxGeometry(0.18, 0.5, 0.18);
+  const leftLegGroup = new THREE.Group();
+  leftLegGroup.position.set(-0.15, 0.9, 0);
   const leftLeg = new THREE.Mesh(legGeo, pantMaterial);
-  leftLeg.position.set(-0.13, 0.82, 0);
-  root.add(leftLeg);
+  leftLeg.position.y = -0.25;
+  leftLegGroup.add(leftLeg);
+  const leftShoe = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.15, 0.25), shoeMaterial);
+  leftShoe.position.set(0, -0.575, 0.03);
+  leftLegGroup.add(leftShoe);
+  root.add(leftLegGroup);
 
+  const rightLegGroup = new THREE.Group();
+  rightLegGroup.position.set(0.15, 0.9, 0);
   const rightLeg = new THREE.Mesh(legGeo, pantMaterial);
-  rightLeg.position.set(0.13, 0.82, 0);
-  root.add(rightLeg);
-
-  const shoeGeo = new THREE.BoxGeometry(0.14, 0.08, 0.22);
-  const leftShoe = new THREE.Mesh(shoeGeo, shoeMaterial);
-  leftShoe.position.set(-0.13, 0.52, -0.04);
-  root.add(leftShoe);
-
-  const rightShoe = new THREE.Mesh(shoeGeo, shoeMaterial);
-  rightShoe.position.set(0.13, 0.52, -0.04);
-  root.add(rightShoe);
+  rightLeg.position.y = -0.25;
+  rightLegGroup.add(rightLeg);
+  const rightShoe = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.15, 0.25), shoeMaterial);
+  rightShoe.position.set(0, -0.575, 0.03);
+  rightLegGroup.add(rightShoe);
+  root.add(rightLegGroup);
 
   const hitbox = new THREE.Mesh(
     new THREE.CapsuleGeometry(0.35, 1.1, 6, 10),
@@ -410,6 +577,16 @@ function createPlayerMesh(isLocal = false) {
   root.userData.nameTag = nameTag;
   root.userData.materials = { shirtMaterial };
   root.userData.groundOffset = 0.48;
+  
+  root.userData.parts = {
+    torso: torsoGroup,
+    head: headGroup,
+    leftArm: leftArmGroup,
+    rightArm: rightArmGroup,
+    leftLeg: leftLegGroup,
+    rightLeg: rightLegGroup
+  };
+
   return root;
 }
 
@@ -563,10 +740,35 @@ function applyRemoteSnapshot(remotePlayer, payload, snap = false) {
   remotePlayer.targetRotationY = targetRot;
 }
 
-function updateRemotePlayers(delta) {
+function updateRemotePlayers(delta, time) {
   const t = THREE.MathUtils.clamp(delta * REMOTE_INTERP_SPEED, 0, 1);
   remoteMeshes.forEach((remotePlayer) => {
     if (!remotePlayer?.targetPosition) return;
+    
+    if (remotePlayer.root.userData.parts && time !== undefined) {
+      const parts = remotePlayer.root.userData.parts;
+      const dist = remotePlayer.root.position.distanceTo(remotePlayer.targetPosition);
+      const speed = Math.min(dist / delta, 5);
+      
+      if (speed > 0.5) {
+        const walkCycle = time * 12;
+        parts.leftLeg.rotation.x = Math.sin(walkCycle) * 0.6;
+        parts.rightLeg.rotation.x = Math.sin(walkCycle + Math.PI) * 0.6;
+        parts.leftArm.rotation.x = Math.sin(walkCycle + Math.PI) * 0.5;
+        parts.rightArm.rotation.x = Math.sin(walkCycle) * 0.1 + 0.4;
+        parts.torso.rotation.y = Math.sin(walkCycle) * 0.1;
+        parts.torso.position.y = 1.44 + Math.abs(Math.sin(walkCycle * 2)) * 0.05;
+      } else {
+        const idleCycle = time * 2;
+        parts.leftLeg.rotation.x = THREE.MathUtils.lerp(parts.leftLeg.rotation.x, 0, 0.1);
+        parts.rightLeg.rotation.x = THREE.MathUtils.lerp(parts.rightLeg.rotation.x, 0, 0.1);
+        parts.leftArm.rotation.x = THREE.MathUtils.lerp(parts.leftArm.rotation.x, 0, 0.1);
+        parts.rightArm.rotation.x = THREE.MathUtils.lerp(parts.rightArm.rotation.x, 0.4, 0.1);
+        parts.torso.rotation.y = THREE.MathUtils.lerp(parts.torso.rotation.y, 0, 0.1);
+        parts.torso.position.y = 1.44 + Math.sin(idleCycle) * 0.02;
+      }
+    }
+
     remotePlayer.root.position.lerp(remotePlayer.targetPosition, t);
     remotePlayer.root.rotation.y = lerpAngle(
       remotePlayer.root.rotation.y,
@@ -644,6 +846,9 @@ scene.add(localBody);
 const bullets = [];
 const flashes = [];
 const impacts = [];
+const activeGrenades = new Map();
+const explosionEffects = [];
+const explodedGrenadeIds = new Set();
 const raycaster = new THREE.Raycaster();
 
 const clock = new THREE.Clock();
@@ -712,101 +917,149 @@ function createViewModel() {
   group.add(sleeve);
 
   const ak47 = new THREE.Group();
-  const akReceiver = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.15, 0.52), metalDark);
-  akReceiver.position.set(-0.03, -0.19, -0.27);
-  akReceiver.rotation.y = -0.035;
+  const akReceiver = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.12, 0.45), metalDark);
+  akReceiver.position.set(-0.02, -0.19, -0.27);
   ak47.add(akReceiver);
-  const akDustCover = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.05, 0.34), metalAccent);
-  akDustCover.position.set(-0.03, -0.11, -0.27);
-  akDustCover.rotation.y = -0.03;
+  
+  const akDustCover = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.04, 0.35), metalAccent);
+  akDustCover.position.set(-0.02, -0.11, -0.27);
   ak47.add(akDustCover);
-  const akFrontBlock = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 0.12), metalAccent);
-  akFrontBlock.position.set(-0.02, -0.16, -0.58);
-  ak47.add(akFrontBlock);
-  const akBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.66, 14), metalAccent);
+
+  const akBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.55, 8), metalAccent);
   akBarrel.rotation.x = Math.PI / 2;
-  akBarrel.position.set(-0.02, -0.18, -0.78);
+  akBarrel.position.set(-0.02, -0.16, -0.75);
   ak47.add(akBarrel);
-  const akMuzzleBrake = new THREE.Mesh(new THREE.CylinderGeometry(0.021, 0.021, 0.05, 12), metalDark);
-  akMuzzleBrake.rotation.x = Math.PI / 2;
-  akMuzzleBrake.position.set(-0.02, -0.18, -1.11);
-  ak47.add(akMuzzleBrake);
-  const akGasTube = new THREE.Mesh(new THREE.CylinderGeometry(0.011, 0.011, 0.42, 10), metalAccent);
+
+  const akGasTube = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, 0.35, 8), metalAccent);
   akGasTube.rotation.x = Math.PI / 2;
-  akGasTube.position.set(-0.02, -0.13, -0.66);
+  akGasTube.position.set(-0.02, -0.12, -0.65);
   ak47.add(akGasTube);
-  const akHandguard = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.09, 0.28), woodMaterial);
-  akHandguard.position.set(-0.02, -0.2, -0.54);
+
+  const akHandguard = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.08, 0.25), woodMaterial);
+  akHandguard.position.set(-0.02, -0.15, -0.6);
   ak47.add(akHandguard);
-  const akGrip = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.2, 0.08), woodMaterial);
-  akGrip.position.set(-0.07, -0.31, -0.12);
-  akGrip.rotation.z = 0.23;
+
+  const akGrip = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.12, 0.05), woodMaterial);
+  akGrip.position.set(-0.02, -0.3, -0.15);
+  akGrip.rotation.x = -0.2;
   ak47.add(akGrip);
-  const akMagazine = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.27, 0.11), metalDark);
-  akMagazine.position.set(-0.01, -0.34, -0.23);
-  akMagazine.rotation.z = -0.26;
-  akMagazine.rotation.x = 0.06;
-  ak47.add(akMagazine);
-  const akStock = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.12, 0.26), woodMaterial);
-  akStock.position.set(-0.04, -0.23, 0.08);
-  akStock.rotation.x = -0.2;
+
+  const akMag = new THREE.Group();
+  const magTop = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.15, 0.08), metalDark);
+  magTop.position.set(0, -0.05, 0);
+  const magBot = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.15, 0.08), metalDark);
+  magBot.position.set(0, -0.18, 0.03);
+  magBot.rotation.x = 0.25;
+  akMag.add(magTop);
+  akMag.add(magBot);
+  akMag.position.set(-0.02, -0.25, -0.35);
+  akMag.rotation.x = 0.1;
+  ak47.add(akMag);
+
+  const akStock = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.11, 0.22), woodMaterial);
+  akStock.position.set(-0.02, -0.22, 0.05);
+  akStock.rotation.x = -0.15;
   ak47.add(akStock);
-  const akRearSight = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.025, 0.045), metalAccent);
-  akRearSight.position.set(-0.03, -0.09, -0.12);
+
+  const akFrontSight = new THREE.Mesh(new THREE.BoxGeometry(0.015, 0.05, 0.02), metalDark);
+  akFrontSight.position.set(-0.02, -0.13, -0.98);
+  ak47.add(akFrontSight);
+  
+  const akRearSight = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.03, 0.03), metalDark);
+  akRearSight.position.set(-0.02, -0.08, -0.4);
   ak47.add(akRearSight);
 
   const shotgun = new THREE.Group();
   shotgun.position.set(-0.015, -0.005, 0.01);
-  const sgBody = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.15, 0.5), metalDark);
-  sgBody.position.set(-0.03, -0.2, -0.24);
+  
+  const sgBody = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.14, 0.4), metalDark);
+  sgBody.position.set(-0.02, -0.18, -0.25);
   shotgun.add(sgBody);
-  const sgBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.78, 12), metalAccent);
+
+  const sgBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.7, 8), metalAccent);
   sgBarrel.rotation.x = Math.PI / 2;
-  sgBarrel.position.set(-0.03, -0.19, -0.72);
+  sgBarrel.position.set(-0.02, -0.14, -0.75);
   shotgun.add(sgBarrel);
-  const sgPump = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.09, 0.2), woodMaterial);
-  sgPump.position.set(-0.03, -0.24, -0.5);
+  
+  const sgTube = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.65, 8), metalDark);
+  sgTube.rotation.x = Math.PI / 2;
+  sgTube.position.set(-0.02, -0.18, -0.72);
+  shotgun.add(sgTube);
+
+  const sgPump = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.07, 0.2), woodMaterial);
+  sgPump.position.set(-0.02, -0.18, -0.65);
   shotgun.add(sgPump);
-  const sgStock = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.12, 0.22), woodMaterial);
-  sgStock.position.set(-0.04, -0.23, 0.02);
-  sgStock.rotation.x = -0.18;
+
+  const sgStock = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.12, 0.25), woodMaterial);
+  sgStock.position.set(-0.02, -0.22, 0.05);
+  sgStock.rotation.x = -0.15;
   shotgun.add(sgStock);
+  
+  const sgGrip = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.14, 0.06), woodMaterial);
+  sgGrip.position.set(-0.02, -0.26, -0.12);
+  sgGrip.rotation.x = -0.3;
+  shotgun.add(sgGrip);
 
   const sniper = new THREE.Group();
   sniper.position.set(0.005, -0.01, 0.015);
-  const snBody = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.12, 0.82), metalDark);
-  snBody.position.set(-0.02, -0.19, -0.34);
+  
+  const snBody = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.12, 0.5), woodMaterial);
+  snBody.position.set(-0.02, -0.18, -0.35);
   sniper.add(snBody);
-  const snBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.92, 12), metalAccent);
+  
+  const snAction = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.06, 0.3), metalDark);
+  snAction.position.set(-0.02, -0.12, -0.35);
+  sniper.add(snAction);
+
+  const snBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.8, 8), metalAccent);
   snBarrel.rotation.x = Math.PI / 2;
-  snBarrel.position.set(-0.015, -0.18, -0.84);
+  snBarrel.position.set(-0.02, -0.14, -0.85);
   sniper.add(snBarrel);
-  const snScopeBody = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.36, 16), metalAccent);
-  snScopeBody.rotation.x = Math.PI / 2;
-  snScopeBody.position.set(-0.015, -0.1, -0.41);
-  sniper.add(snScopeBody);
-  const snScopeLens = new THREE.Mesh(new THREE.CircleGeometry(0.038, 20), scopeGlass);
-  snScopeLens.position.set(-0.015, -0.1, -0.23);
+  
+  const snMuzzle = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.1, 8), metalDark);
+  snMuzzle.rotation.x = Math.PI / 2;
+  snMuzzle.position.set(-0.02, -0.14, -1.25);
+  sniper.add(snMuzzle);
+
+  const snScope = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.35, 12), metalDark);
+  snScope.rotation.x = Math.PI / 2;
+  snScope.position.set(-0.02, -0.04, -0.35);
+  sniper.add(snScope);
+  
+  const snScopeMount1 = new THREE.Mesh(new THREE.BoxGeometry(0.015, 0.04, 0.02), metalDark);
+  snScopeMount1.position.set(-0.02, -0.07, -0.25);
+  sniper.add(snScopeMount1);
+  const snScopeMount2 = new THREE.Mesh(new THREE.BoxGeometry(0.015, 0.04, 0.02), metalDark);
+  snScopeMount2.position.set(-0.02, -0.07, -0.45);
+  sniper.add(snScopeMount2);
+
+  const snScopeLens = new THREE.Mesh(new THREE.CircleGeometry(0.025, 12), scopeGlass);
+  snScopeLens.position.set(-0.02, -0.04, -0.17);
   sniper.add(snScopeLens);
-  const snStock = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.11, 0.28), woodMaterial);
-  snStock.position.set(-0.03, -0.24, 0.02);
-  snStock.rotation.x = -0.22;
+
+  const snStock = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.12, 0.3), woodMaterial);
+  snStock.position.set(-0.02, -0.2, -0.05);
+  snStock.rotation.x = -0.1;
   sniper.add(snStock);
+  
+  const snCheek = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.04, 0.12), metalDark);
+  snCheek.position.set(-0.02, -0.13, -0.1);
+  sniper.add(snCheek);
 
   group.add(ak47);
   group.add(shotgun);
   group.add(sniper);
 
   const muzzleAk = new THREE.Object3D();
-  muzzleAk.position.set(-0.02, -0.18, -1.15);
+  muzzleAk.position.set(-0.02, -0.16, -1.05);
   ak47.add(muzzleAk);
 
   const muzzleShotgun = new THREE.Object3D();
-  muzzleShotgun.position.set(-0.03, -0.19, -1.04);
+  muzzleShotgun.position.set(-0.03, -0.14, -1.1);
   shotgun.add(muzzleShotgun);
 
   const muzzleSniper = new THREE.Object3D();
-  muzzleSniper.position.set(-0.015, -0.18, -1.19);
+  muzzleSniper.position.set(-0.015, -0.14, -1.3);
   sniper.add(muzzleSniper);
 
   group.userData.weaponModels = { ak47, shotgun, sniper };
@@ -855,6 +1108,7 @@ function connect() {
       state.team = msg.team;
       state.weapon = msg.weapon;
       state.health = Number(msg.health) || 100;
+      state.grenadesHeld = Math.max(0, Math.min(1, Number(msg.grenades) || 0));
       setLocalAlive(msg.alive !== false);
       if (msg.spawn) {
         applyLocalSpawn(msg.spawn);
@@ -864,6 +1118,7 @@ function connect() {
         b.classList.toggle("active", b.getAttribute("data-weapon") === state.weapon);
       });
       updateTeamHud();
+      updateGrenadeHud();
       enterGame();
       return;
     }
@@ -879,6 +1134,11 @@ function connect() {
       setTimeout(() => {
         if (state.isAlive) respawnNotice.classList.add("hidden");
       }, 1500);
+      return;
+    }
+
+    if (msg.type === "room:grenades") {
+      syncGrenadePickups(Array.isArray(msg.pickups) ? msg.pickups : []);
       return;
     }
 
@@ -909,6 +1169,12 @@ function connect() {
       return;
     }
 
+    if (msg.type === "player:grenadeInventory") {
+      state.grenadesHeld = Math.max(0, Math.min(1, Number(msg.count) || 0));
+      updateGrenadeHud();
+      return;
+    }
+
     if (msg.type === "player:died") {
       if (msg.id === state.playerId) {
         state.deathKillerId = msg.killerId || null;
@@ -927,6 +1193,7 @@ function connect() {
         applyLocalSpawn(msg.spawn);
       }
       state.health = Number(msg.health) || 100;
+      state.grenadesHeld = Math.max(0, Math.min(1, Number(msg.grenades) || 0));
       state.respawnUntil = 0;
       setLocalAlive(msg.alive !== false);
       setPauseMenu(false);
@@ -934,6 +1201,7 @@ function connect() {
         canvas.requestPointerLock();
       }
       updateHealthHud();
+      updateGrenadeHud();
       return;
     }
 
@@ -949,6 +1217,16 @@ function connect() {
         const maxTravel = impact?.distance || range;
         spawnBulletVisual(msg.origin, shot.direction, false, bulletSpeed, maxTravel);
       });
+      return;
+    }
+
+    if (msg.type === "grenade:thrown") {
+      spawnThrownGrenade(msg.grenade);
+      return;
+    }
+
+    if (msg.type === "grenade:explode") {
+      explodeGrenade(msg.id, msg.position, Number(msg.radius) || GRENADE_CONFIG.blastRadius, false);
     }
   });
 }
@@ -980,10 +1258,11 @@ function enterGame() {
   hud.classList.remove("hidden");
   crosshair.classList.remove("hidden");
   playerList.classList.remove("hidden");
-  pauseMenu.classList.add("hidden");
+  pauseMenuOverlay.classList.add("hidden");
   hudRoom.textContent = state.roomId;
   updateTeamHud();
-  hudWeapon.textContent = `Arme: ${weaponLabel(state.weapon)}`;
+  updateWeaponHud();
+  updateGrenadeHud();
   updateHealthHud();
   updateRespawnNotice();
 }
@@ -991,7 +1270,7 @@ function enterGame() {
 function setPauseMenu(open) {
   if (!state.joined) return;
   state.pauseOpen = open;
-  pauseMenu.classList.toggle("hidden", !open);
+  pauseMenuOverlay.classList.toggle("hidden", !open);
   crosshair.classList.toggle("hidden", open);
   sniperScope.classList.add("hidden");
   if (open) {
@@ -1012,8 +1291,31 @@ function weaponLabel(w) {
   return WEAPON_STATS[w]?.label || WEAPON_STATS.ak47.label;
 }
 
+function updateWeaponHud(weapon = state.weapon) {
+  if (!hudWeapon) return;
+  const key = WEAPON_STATS[weapon] ? weapon : "ak47";
+  hudWeapon.dataset.weapon = key;
+  hudWeapon.classList.remove("hud-weapon--ak47", "hud-weapon--shotgun", "hud-weapon--sniper");
+  hudWeapon.classList.add(`hud-weapon--${key}`);
+  hudWeapon.querySelectorAll(".hud-weapon__svg").forEach((svg) => {
+    svg.classList.toggle("is-active", svg.classList.contains(`hud-weapon__svg--${key}`));
+  });
+  if (hudWeaponName) {
+    hudWeaponName.textContent = weaponLabel(key);
+  }
+  hudWeapon.setAttribute("aria-label", `Arme équipée : ${weaponLabel(key)}`);
+}
+
 function getWeaponStats(weapon = state.weapon) {
   return WEAPON_STATS[weapon] || WEAPON_STATS.ak47;
+}
+
+function updateGrenadeHud() {
+  if (!hudGrenade) return;
+  const has = state.grenadesHeld >= 1;
+  hudGrenade.classList.toggle("hud-grenade--ready", has);
+  hudGrenade.classList.toggle("hud-grenade--empty", !has);
+  hudGrenade.setAttribute("aria-label", has ? "Grenade prête, touche G pour lancer" : "Pas de grenade");
 }
 
 function updateZoomState() {
@@ -1091,7 +1393,7 @@ weaponChoice.addEventListener("click", (event) => {
   setActiveWeaponModel(weapon);
   weaponChoice.querySelectorAll("button").forEach((b) => b.classList.remove("active"));
   target.classList.add("active");
-  hudWeapon.textContent = `Arme: ${weaponLabel(weapon)}`;
+  updateWeaponHud(weapon);
   if (state.ws && state.ws.readyState === WebSocket.OPEN) {
     state.ws.send(JSON.stringify({ type: "weapon:select", weapon }));
   }
@@ -1107,6 +1409,13 @@ document.addEventListener("keydown", (e) => {
   if (e.code === "Escape" && state.joined) {
     e.preventDefault();
     togglePauseMenu();
+    return;
+  }
+  if (e.code === "KeyG") {
+    if (state.joined && !state.pauseOpen && state.isAlive) {
+      e.preventDefault();
+      throwGrenade();
+    }
     return;
   }
   state.keys.add(e.code);
@@ -1161,6 +1470,12 @@ window.addEventListener("blur", () => {
   state.isAiming = false;
 });
 resumeBtn.addEventListener("click", () => {
+  setPauseMenu(false);
+  canvas.requestPointerLock();
+});
+
+pauseMenuOverlay.addEventListener("click", (e) => {
+  if (e.target !== pauseMenuOverlay) return;
   setPauseMenu(false);
   canvas.requestPointerLock();
 });
@@ -1399,11 +1714,12 @@ function animate() {
     shoot();
   }
   animateViewModel(delta);
-  updateRemotePlayers(delta);
+  updateRemotePlayers(delta, time);
   updateDeathCamera(delta);
   updateBullets(delta);
   updateFlashes(delta);
   updateImpacts(delta);
+  updateGrenades(delta, time);
   updateMapFun(time, delta);
   sendPlayerUpdate();
 
@@ -1416,9 +1732,43 @@ function updateMapFun(time, delta) {
   }
 }
 
+function impulseViewRecoilFromWeapon(stats) {
+  const r = stats.viewRecoil;
+  if (!r) return;
+  const scoped =
+    state.weapon === "sniper" &&
+    state.isAiming &&
+    state.joined &&
+    state.isAlive &&
+    !state.pauseOpen;
+  const mul = scoped ? 0.68 : 1;
+  const kickZ = r.z * mul;
+  const kickY = (r.y || 0) * mul;
+  const kickRotX = r.rotX * mul;
+  const kickRotZRand = (Math.random() - 0.5) * r.rotZ * mul;
+  state.viewRecoilZ = Math.min(state.viewRecoilZ + kickZ, 0.32);
+  state.viewRecoilY = Math.max(state.viewRecoilY + kickY, -0.09);
+  state.viewRecoilRotX = Math.min(state.viewRecoilRotX + kickRotX, 0.2);
+  state.viewRecoilRotZ = THREE.MathUtils.clamp(state.viewRecoilRotZ + kickRotZRand, -0.12, 0.12);
+}
+
 function animateViewModel(delta) {
+  const decay = Math.exp(-VIEW_RECOIL_DECAY * delta);
+  state.viewRecoilZ *= decay;
+  state.viewRecoilY *= decay;
+  state.viewRecoilRotX *= decay;
+  state.viewRecoilRotZ *= decay;
+
   const t = performance.now() * 0.001;
   const intensity = state.movementBlend;
+  const recoilNorm = Math.min(
+    1,
+    (Math.abs(state.viewRecoilZ) +
+      Math.abs(state.viewRecoilRotX) +
+      Math.abs(state.viewRecoilY)) /
+      VIEW_RECOIL_NORM_CAP
+  );
+  const bobIntensity = intensity * (1 - VIEW_RECOIL_BOB_SUPPRESS_K * recoilNorm);
   const sprinting =
     state.joined &&
     state.isAlive &&
@@ -1431,13 +1781,19 @@ function animateViewModel(delta) {
   const bobRotX = 0.01 * sprintFactor;
   const bobRotY = 0.008 * sprintFactor;
 
-  viewModel.position.x = 0.3 + Math.sin(t * 9.5 * sprintFactor) * bobX * intensity;
+  viewModel.position.x = 0.3 + Math.sin(t * 9.5 * sprintFactor) * bobX * bobIntensity;
   viewModel.position.y =
-    -0.31 + Math.cos(t * 7.5 * sprintFactor) * bobY * intensity + (state.onGround ? 0 : -0.03);
-  viewModel.position.z = -0.52 + Math.sin(t * 15 * sprintFactor) * 0.004 * intensity;
-  viewModel.rotation.z = Math.sin(t * 8.5 * sprintFactor) * bobRotZ * intensity;
-  viewModel.rotation.x = -0.02 + Math.cos(t * 8 * sprintFactor) * bobRotX * intensity;
-  viewModel.rotation.y = -0.22 + Math.sin(t * 6.7 * sprintFactor) * bobRotY * intensity;
+    -0.31 +
+    Math.cos(t * 7.5 * sprintFactor) * bobY * bobIntensity +
+    (state.onGround ? 0 : -0.03) +
+    state.viewRecoilY;
+  viewModel.position.z =
+    -0.52 + Math.sin(t * 15 * sprintFactor) * 0.004 * bobIntensity + state.viewRecoilZ;
+  viewModel.rotation.z =
+    Math.sin(t * 8.5 * sprintFactor) * bobRotZ * bobIntensity + state.viewRecoilRotZ;
+  viewModel.rotation.x =
+    -0.02 + Math.cos(t * 8 * sprintFactor) * bobRotX * bobIntensity + state.viewRecoilRotX;
+  viewModel.rotation.y = -0.22 + Math.sin(t * 6.7 * sprintFactor) * bobRotY * bobIntensity;
 }
 
 function shoot() {
@@ -1447,6 +1803,7 @@ function shoot() {
   const msBetweenShots = 1000 / stats.fireRate;
   if (now - state.lastShotAt < msBetweenShots) return;
   state.lastShotAt = now;
+  impulseViewRecoilFromWeapon(stats);
 
   const muzzle = viewModel.userData.activeMuzzle || viewModel.userData.muzzle;
   const spawnPos = new THREE.Vector3();
@@ -1487,6 +1844,330 @@ function shoot() {
       })
     );
   }
+}
+
+function createThrownGrenadeMesh() {
+  const group = new THREE.Group();
+
+  const body = new THREE.Mesh(
+    new THREE.SphereGeometry(GRENADE_CONFIG.radius, 12, 10),
+    new THREE.MeshStandardMaterial({ color: 0x556f49, roughness: 0.52, metalness: 0.28 })
+  );
+  group.add(body);
+
+  const band = new THREE.Mesh(
+    new THREE.TorusGeometry(0.11, 0.016, 8, 18),
+    new THREE.MeshStandardMaterial({ color: 0x25282d, roughness: 0.38, metalness: 0.72 })
+  );
+  band.rotation.x = Math.PI / 2;
+  group.add(band);
+
+  return group;
+}
+
+function createGrenadeTrail() {
+  return new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]),
+    new THREE.LineBasicMaterial({
+      color: 0xffe19c,
+      transparent: true,
+      opacity: 0.72
+    })
+  );
+}
+
+function spawnThrownGrenade(grenadeData) {
+  if (!grenadeData?.id || !grenadeData.origin || !grenadeData.direction) return null;
+
+  const existing = activeGrenades.get(grenadeData.id);
+  if (existing) {
+    existing.ownerId = grenadeData.ownerId || existing.ownerId;
+    existing.fuseMs = Number(grenadeData.fuseMs) || existing.fuseMs;
+    return existing;
+  }
+
+  const mesh = createThrownGrenadeMesh();
+  mesh.position.set(
+    Number(grenadeData.origin.x) || 0,
+    Number(grenadeData.origin.y) || 0,
+    Number(grenadeData.origin.z) || 0
+  );
+  scene.add(mesh);
+
+  const trail = createGrenadeTrail();
+  trail.geometry.setFromPoints([mesh.position.clone(), mesh.position.clone()]);
+  scene.add(trail);
+
+  const direction = new THREE.Vector3(
+    Number(grenadeData.direction.x) || 0,
+    Number(grenadeData.direction.y) || 0,
+    Number(grenadeData.direction.z) || 0
+  );
+  if (direction.lengthSq() <= 0.0001) direction.set(0, 0.25, -1);
+  direction.normalize();
+
+  const grenade = {
+    id: grenadeData.id,
+    ownerId: grenadeData.ownerId || null,
+    mesh,
+    trail,
+    velocity: direction.multiplyScalar(Number(grenadeData.speed) || GRENADE_CONFIG.throwSpeed),
+    ageMs: 0,
+    fuseMs: Number(grenadeData.fuseMs) || GRENADE_CONFIG.fuseMs
+  };
+  activeGrenades.set(grenade.id, grenade);
+  return grenade;
+}
+
+function disposeGrenade(grenade) {
+  if (!grenade) return;
+  scene.remove(grenade.mesh);
+  scene.remove(grenade.trail);
+  grenade.mesh.traverse((child) => {
+    if (child.geometry) child.geometry.dispose();
+    if (child.material) child.material.dispose();
+  });
+  grenade.trail.geometry.dispose();
+  grenade.trail.material.dispose();
+}
+
+function resolveGrenadeBlockCollisions(position, velocity) {
+  const radius = GRENADE_CONFIG.radius;
+
+  for (const box of staticBlockColliders) {
+    const closest = new THREE.Vector3(
+      THREE.MathUtils.clamp(position.x, box.min.x, box.max.x),
+      THREE.MathUtils.clamp(position.y, box.min.y, box.max.y),
+      THREE.MathUtils.clamp(position.z, box.min.z, box.max.z)
+    );
+    const delta = position.clone().sub(closest);
+    const distSq = delta.lengthSq();
+    if (distSq >= radius * radius) continue;
+
+    let normal;
+    let distance = Math.sqrt(distSq);
+    if (distance > 0.0001) {
+      normal = delta.multiplyScalar(1 / distance);
+    } else {
+      const center = box.getCenter(new THREE.Vector3());
+      const offset = position.clone().sub(center);
+      const absX = Math.abs(offset.x);
+      const absY = Math.abs(offset.y);
+      const absZ = Math.abs(offset.z);
+      if (absX >= absY && absX >= absZ) {
+        normal = new THREE.Vector3(Math.sign(offset.x) || 1, 0, 0);
+      } else if (absY >= absX && absY >= absZ) {
+        normal = new THREE.Vector3(0, Math.sign(offset.y) || 1, 0);
+      } else {
+        normal = new THREE.Vector3(0, 0, Math.sign(offset.z) || 1);
+      }
+      distance = 0;
+    }
+
+    position.addScaledVector(normal, radius - distance + 0.002);
+    const velocityAlongNormal = velocity.dot(normal);
+    if (velocityAlongNormal < 0) {
+      velocity.addScaledVector(normal, -(1 + GRENADE_CONFIG.bounceDamping) * velocityAlongNormal);
+      velocity.multiplyScalar(0.985);
+    }
+  }
+}
+
+function simulateGrenade(grenade, delta) {
+  let remaining = delta;
+  const timeStep = 1 / 120;
+  const maxBound = MAP_HALF_SIZE - GRENADE_CONFIG.radius;
+
+  while (remaining > 0) {
+    const step = Math.min(timeStep, remaining);
+    remaining -= step;
+
+    grenade.velocity.y -= GRENADE_CONFIG.gravity * step;
+    const previous = grenade.mesh.position.clone();
+    grenade.mesh.position.addScaledVector(grenade.velocity, step);
+
+    if (grenade.mesh.position.x < -maxBound || grenade.mesh.position.x > maxBound) {
+      grenade.mesh.position.x = THREE.MathUtils.clamp(grenade.mesh.position.x, -maxBound, maxBound);
+      grenade.velocity.x *= -GRENADE_CONFIG.bounceDamping;
+    }
+
+    if (grenade.mesh.position.z < -maxBound || grenade.mesh.position.z > maxBound) {
+      grenade.mesh.position.z = THREE.MathUtils.clamp(grenade.mesh.position.z, -maxBound, maxBound);
+      grenade.velocity.z *= -GRENADE_CONFIG.bounceDamping;
+    }
+
+    resolveGrenadeBlockCollisions(grenade.mesh.position, grenade.velocity);
+
+    const groundHeight = getGroundHeightAt(
+      grenade.mesh.position.x,
+      grenade.mesh.position.z,
+      grenade.mesh.position.y - GRENADE_CONFIG.radius
+    );
+    const minY = groundHeight + GRENADE_CONFIG.radius;
+    if (grenade.mesh.position.y <= minY) {
+      grenade.mesh.position.y = minY;
+      if (Math.abs(grenade.velocity.y) > GRENADE_CONFIG.minVerticalBounce) {
+        grenade.velocity.y = Math.abs(grenade.velocity.y) * GRENADE_CONFIG.bounceDamping;
+      } else {
+        grenade.velocity.y = 0;
+      }
+      grenade.velocity.x *= GRENADE_CONFIG.friction;
+      grenade.velocity.z *= GRENADE_CONFIG.friction;
+      if (Math.hypot(grenade.velocity.x, grenade.velocity.z) < GRENADE_CONFIG.minHorizontalSpeed) {
+        grenade.velocity.x = 0;
+        grenade.velocity.z = 0;
+      }
+    }
+
+    grenade.mesh.rotation.x += step * (grenade.velocity.length() * 0.7 + 2.8);
+    grenade.mesh.rotation.z += step * 4.2;
+    grenade.trail.geometry.setFromPoints([previous, grenade.mesh.position.clone()]);
+  }
+}
+
+function createExplosionEffect(position, radius) {
+  const flash = new THREE.Mesh(
+    new THREE.SphereGeometry(Math.max(0.4, radius * 0.22), 18, 14),
+    new THREE.MeshBasicMaterial({ color: 0xffb347, transparent: true, opacity: 0.95 })
+  );
+  flash.position.set(position.x, position.y, position.z);
+  scene.add(flash);
+
+  const ring = new THREE.Mesh(
+    new THREE.TorusGeometry(Math.max(0.5, radius * 0.35), 0.08, 10, 28),
+    new THREE.MeshBasicMaterial({ color: 0xfff1aa, transparent: true, opacity: 0.88 })
+  );
+  ring.rotation.x = Math.PI / 2;
+  ring.position.set(position.x, position.y + 0.06, position.z);
+  scene.add(ring);
+
+  explosionEffects.push({ flash, ring, life: 0.34, maxLife: 0.34, radius });
+}
+
+function explodeGrenade(grenadeId, position, radius = GRENADE_CONFIG.blastRadius, shouldNotify = false) {
+  if (!grenadeId || !position || explodedGrenadeIds.has(grenadeId)) return;
+  explodedGrenadeIds.add(grenadeId);
+
+  const grenade = activeGrenades.get(grenadeId);
+  if (grenade) {
+    disposeGrenade(grenade);
+    activeGrenades.delete(grenadeId);
+  }
+
+  createExplosionEffect(position, radius);
+
+  if (shouldNotify && state.ws && state.ws.readyState === WebSocket.OPEN) {
+    state.ws.send(
+      JSON.stringify({
+        type: "grenade:explode",
+        id: grenadeId,
+        position
+      })
+    );
+  }
+}
+
+function updateExplosionEffects(delta) {
+  for (let i = explosionEffects.length - 1; i >= 0; i -= 1) {
+    const effect = explosionEffects[i];
+    effect.life -= delta;
+    const progress = 1 - effect.life / effect.maxLife;
+    const opacity = Math.max(0, effect.life / effect.maxLife);
+
+    effect.flash.scale.setScalar(1 + progress * 2.6);
+    effect.flash.material.opacity = opacity * 0.95;
+    effect.ring.scale.setScalar(1 + progress * 2.1);
+    effect.ring.material.opacity = opacity * 0.85;
+
+    if (effect.life <= 0) {
+      scene.remove(effect.flash);
+      scene.remove(effect.ring);
+      effect.flash.geometry.dispose();
+      effect.flash.material.dispose();
+      effect.ring.geometry.dispose();
+      effect.ring.material.dispose();
+      explosionEffects.splice(i, 1);
+    }
+  }
+}
+
+function updateGrenades(delta, time) {
+  updateGrenadePickupVisuals(time);
+  tryPickupNearbyGrenade();
+
+  activeGrenades.forEach((grenade, grenadeId) => {
+    simulateGrenade(grenade, delta);
+    grenade.ageMs += delta * 1000;
+    if (grenade.ageMs >= grenade.fuseMs) {
+      const position = {
+        x: grenade.mesh.position.x,
+        y: grenade.mesh.position.y,
+        z: grenade.mesh.position.z
+      };
+      const shouldNotify = grenade.ownerId === state.playerId;
+      explodeGrenade(grenadeId, position, GRENADE_CONFIG.blastRadius, shouldNotify);
+    }
+  });
+
+  updateExplosionEffects(delta);
+}
+
+function tryPickupNearbyGrenade() {
+  if (!state.joined || state.pauseOpen || !state.isAlive) return;
+  if (state.grenadesHeld >= 1 || !state.ws || state.ws.readyState !== WebSocket.OPEN) return;
+
+  const now = performance.now();
+  if (now - state.lastGrenadePickupAttemptAt < 220) return;
+
+  for (const pickup of grenadePickups.values()) {
+    if (!pickup?.position || pickup.available === false) continue;
+    const dx = camera.position.x - (Number(pickup.position.x) || 0);
+    const dz = camera.position.z - (Number(pickup.position.z) || 0);
+    if (dx * dx + dz * dz > GRENADE_CONFIG.pickupRadius * GRENADE_CONFIG.pickupRadius) continue;
+
+    state.lastGrenadePickupAttemptAt = now;
+    state.ws.send(JSON.stringify({ type: "grenade:pickup", pickupId: pickup.id }));
+    break;
+  }
+}
+
+function throwGrenade() {
+  if (!state.joined || state.pauseOpen || !state.isAlive) return;
+  if (state.grenadesHeld < 1 || !state.ws || state.ws.readyState !== WebSocket.OPEN) return;
+
+  const throwDirection = new THREE.Vector3();
+  camera.getWorldDirection(throwDirection);
+  throwDirection.normalize();
+  throwDirection.y += 0.18;
+  throwDirection.normalize();
+
+  const origin = new THREE.Vector3(
+    camera.position.x + throwDirection.x * 0.7,
+    camera.position.y - 0.12 + throwDirection.y * 0.35,
+    camera.position.z + throwDirection.z * 0.7
+  );
+  const grenadeId = `${state.playerId || "local"}-${Date.now()}-${state.grenadeSequence}`;
+  state.grenadeSequence += 1;
+
+  spawnThrownGrenade({
+    id: grenadeId,
+    ownerId: state.playerId,
+    origin: { x: origin.x, y: origin.y, z: origin.z },
+    direction: { x: throwDirection.x, y: throwDirection.y, z: throwDirection.z },
+    speed: GRENADE_CONFIG.throwSpeed,
+    fuseMs: GRENADE_CONFIG.fuseMs
+  });
+
+  state.grenadesHeld = 0;
+  updateGrenadeHud();
+  state.ws.send(
+    JSON.stringify({
+      type: "grenade:throw",
+      id: grenadeId,
+      origin: { x: origin.x, y: origin.y, z: origin.z },
+      direction: { x: throwDirection.x, y: throwDirection.y, z: throwDirection.z }
+    })
+  );
 }
 
 function spawnBulletVisual(origin, direction, localShot, bulletSpeed, maxTravelDistance = 120) {

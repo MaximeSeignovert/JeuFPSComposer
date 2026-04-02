@@ -25,6 +25,17 @@ const DEV_BOT_TRAJECTORY_RADIUS = 2.2;
 const DEV_BOT_TRAJECTORY_SPEED = 1.1;
 const SPAWN_MARGIN = 4;
 const MAP_HALF_SIZE = 40;
+const GRENADE_FUSE_MS = 1600;
+const GRENADE_THROW_SPEED = 16;
+const GRENADE_BLAST_RADIUS = 8.5;
+const GRENADE_MAX_DAMAGE = 95;
+const GRENADE_PICKUP_RESPAWN_MS = 12000;
+const GRENADE_PICKUP_RADIUS = 2.2;
+const PLAYER_CENTER_HEIGHT = 1.05;
+const GRENADE_PICKUP_POINTS = [
+  { id: "grenade-west", position: { x: -18, y: 0, z: 18 } },
+  { id: "grenade-east", position: { x: 18, y: 0, z: -18 } }
+];
 const rooms = new Map();
 
 app.use(express.static(path.join(__dirname, "public")));
@@ -37,6 +48,13 @@ function createRoom(id) {
   rooms.set(id, {
     id,
     players: new Map(),
+    grenadePickups: GRENADE_PICKUP_POINTS.map((pickup) => ({
+      id: pickup.id,
+      position: { ...pickup.position },
+      available: true,
+      respawnTimer: null
+    })),
+    activeGrenades: new Map(),
     devBot: {
       id: `${id}-dev-bot`,
       name: "DEV Bot",
@@ -97,6 +115,99 @@ function getSpawnPosition() {
   const x = (Math.random() - 0.5) * half * 2;
   const z = (Math.random() - 0.5) * half * 2;
   return { x, y: 0, z };
+}
+
+function roomGrenadesPayload(room) {
+  return room.grenadePickups.map((pickup) => ({
+    id: pickup.id,
+    position: pickup.position,
+    available: pickup.available
+  }));
+}
+
+function sendRoomGrenades(roomId) {
+  const room = rooms.get(roomId);
+  if (!room) return;
+  sendToRoom(roomId, {
+    type: "room:grenades",
+    pickups: roomGrenadesPayload(room)
+  });
+}
+
+function sendGrenadeInventory(ws) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  ws.send(
+    JSON.stringify({
+      type: "player:grenadeInventory",
+      count: Math.max(0, Number(ws.meta?.grenades) || 0)
+    })
+  );
+}
+
+function scheduleGrenadeRespawn(room, pickup) {
+  if (!room || !pickup) return;
+  if (pickup.respawnTimer) clearTimeout(pickup.respawnTimer);
+  pickup.respawnTimer = setTimeout(() => {
+    pickup.available = true;
+    pickup.respawnTimer = null;
+    sendRoomGrenades(room.id);
+  }, GRENADE_PICKUP_RESPAWN_MS);
+}
+
+function distance2DSquared(a, b) {
+  const dx = (Number(a?.x) || 0) - (Number(b?.x) || 0);
+  const dz = (Number(a?.z) || 0) - (Number(b?.z) || 0);
+  return dx * dx + dz * dz;
+}
+
+function applyGrenadeExplosion(room, grenade, position) {
+  if (!room || !position) return;
+  const victimsToKill = [];
+  let damagedSomeone = false;
+
+  room.players.forEach((targetWs) => {
+    if (!targetWs?.meta?.alive) return;
+    if (Date.now() < (targetWs.meta.invulnerableUntil || 0)) return;
+
+    const playerPos = targetWs.meta.lastPosition;
+    if (!playerPos) return;
+
+    const dx = (Number(playerPos.x) || 0) - (Number(position.x) || 0);
+    const dy = (Number(playerPos.y) || 0) + PLAYER_CENTER_HEIGHT - (Number(position.y) || 0);
+    const dz = (Number(playerPos.z) || 0) - (Number(position.z) || 0);
+    const distance = Math.hypot(dx, dy, dz);
+    if (distance > GRENADE_BLAST_RADIUS) return;
+
+    const proximity = 1 - distance / GRENADE_BLAST_RADIUS;
+    const damage = Math.max(18, Math.round(GRENADE_MAX_DAMAGE * proximity));
+    if (damage <= 0) return;
+
+    targetWs.meta.health = Math.max(0, targetWs.meta.health - damage);
+    damagedSomeone = true;
+
+    if (targetWs.readyState === WebSocket.OPEN) {
+      targetWs.send(
+        JSON.stringify({
+          type: "player:health",
+          health: targetWs.meta.health
+        })
+      );
+    }
+
+    if (targetWs.meta.health <= 0) {
+      victimsToKill.push(targetWs);
+    }
+  });
+
+  if (victimsToKill.length === 0) {
+    if (damagedSomeone) sendRoomPlayers(room.id);
+    return;
+  }
+
+  const killerWs = room.players.get(grenade.ownerId) || null;
+  victimsToKill.forEach((victimWs) => {
+    killAndScheduleRespawn(victimWs, killerWs);
+  });
 }
 
 function roomPlayersPayload(room) {
@@ -162,6 +273,7 @@ function startDevBot(room) {
 
   room.devBot.timer = setInterval(() => {
     if (room.players.size === 0) return;
+    if (!room.devBot.alive) return;
     room.devBot.phase += DEV_BOT_TRAJECTORY_SPEED * (DEV_BOT_MOVE_INTERVAL_MS / 1000);
     const angle = room.devBot.phase;
     const x = room.devBot.center.x + Math.cos(angle) * DEV_BOT_TRAJECTORY_RADIUS;
@@ -216,6 +328,8 @@ function killAndScheduleRespawn(victimWs, killerWs = null) {
   victimWs.meta.health = 0;
   victimWs.meta.alive = false;
   victimWs.meta.deaths += 1;
+  victimWs.meta.grenades = 0;
+  sendGrenadeInventory(victimWs);
 
   if (killerWs?.meta?.id && killerWs.meta.id !== victimWs.meta.id) {
     killerWs.meta.kills += 1;
@@ -249,7 +363,8 @@ function killAndScheduleRespawn(victimWs, killerWs = null) {
         type: "player:respawn",
         health: victimWs.meta.health,
         alive: victimWs.meta.alive,
-        spawn
+        spawn,
+        grenades: victimWs.meta.grenades
       })
     );
     sendToRoom(currentRoom.id, {
@@ -279,7 +394,8 @@ wss.on("connection", (ws) => {
     kills: 0,
     deaths: 0,
     respawnTimer: null,
-    invulnerableUntil: 0
+    invulnerableUntil: 0,
+    grenades: 0
   };
 
   ws.send(
@@ -331,6 +447,7 @@ wss.on("connection", (ws) => {
       ws.meta.team = "ffa";
       ws.meta.health = MAX_HEALTH;
       ws.meta.alive = true;
+      ws.meta.grenades = 0;
       ws.meta.invulnerableUntil = Date.now() + RESPAWN_IMMUNITY_MS;
       const spawn = getSpawnPosition();
       ws.meta.lastPosition = spawn;
@@ -345,11 +462,13 @@ wss.on("connection", (ws) => {
           weapon: ws.meta.weapon,
           health: ws.meta.health,
           alive: ws.meta.alive,
-          spawn
+          spawn,
+          grenades: ws.meta.grenades
         })
       );
 
       sendRoomPlayers(room.id);
+      sendRoomGrenades(room.id);
       startDevBot(room);
 
       broadcastRoomList();
@@ -382,6 +501,102 @@ wss.on("connection", (ws) => {
         origin: msg.origin,
         weapon: ws.meta.weapon,
         shots: msg.shots
+      });
+      return;
+    }
+
+    if (msg.type === "grenade:pickup" && ws.meta.roomId) {
+      const room = rooms.get(ws.meta.roomId);
+      if (!room || !ws.meta.alive) return;
+      if ((ws.meta.grenades || 0) >= 1) {
+        sendGrenadeInventory(ws);
+        return;
+      }
+
+      const pickupId = String(msg.pickupId || "");
+      const pickup = room.grenadePickups.find((entry) => entry.id === pickupId);
+      if (!pickup || !pickup.available) return;
+
+      const playerPosition = ws.meta.lastPosition;
+      if (!playerPosition) return;
+      if (distance2DSquared(playerPosition, pickup.position) > GRENADE_PICKUP_RADIUS * GRENADE_PICKUP_RADIUS) {
+        return;
+      }
+
+      pickup.available = false;
+      ws.meta.grenades = 1;
+      sendGrenadeInventory(ws);
+      sendRoomGrenades(room.id);
+      scheduleGrenadeRespawn(room, pickup);
+      return;
+    }
+
+    if (msg.type === "grenade:throw" && ws.meta.roomId) {
+      const room = rooms.get(ws.meta.roomId);
+      if (!room || !ws.meta.alive) return;
+
+      const grenadeId = String(msg.id || "").slice(0, 80);
+      const origin = msg.origin;
+      const direction = msg.direction;
+      if (!grenadeId || room.activeGrenades.has(grenadeId)) return;
+      if ((ws.meta.grenades || 0) < 1) return;
+      if (
+        !origin ||
+        !direction ||
+        !Number.isFinite(Number(origin.x)) ||
+        !Number.isFinite(Number(origin.y)) ||
+        !Number.isFinite(Number(origin.z)) ||
+        !Number.isFinite(Number(direction.x)) ||
+        !Number.isFinite(Number(direction.y)) ||
+        !Number.isFinite(Number(direction.z))
+      ) {
+        return;
+      }
+
+      ws.meta.grenades = 0;
+      room.activeGrenades.set(grenadeId, {
+        id: grenadeId,
+        ownerId: ws.meta.id,
+        thrownAt: Date.now()
+      });
+      sendGrenadeInventory(ws);
+      sendToRoom(room.id, {
+        type: "grenade:thrown",
+        grenade: {
+          id: grenadeId,
+          ownerId: ws.meta.id,
+          origin,
+          direction,
+          speed: GRENADE_THROW_SPEED,
+          fuseMs: GRENADE_FUSE_MS
+        }
+      });
+      return;
+    }
+
+    if (msg.type === "grenade:explode" && ws.meta.roomId) {
+      const room = rooms.get(ws.meta.roomId);
+      if (!room) return;
+
+      const grenadeId = String(msg.id || "");
+      const grenade = room.activeGrenades.get(grenadeId);
+      const position = msg.position;
+      if (!grenade || grenade.ownerId !== ws.meta.id || !position) return;
+      if (
+        !Number.isFinite(Number(position.x)) ||
+        !Number.isFinite(Number(position.y)) ||
+        !Number.isFinite(Number(position.z))
+      ) {
+        return;
+      }
+
+      room.activeGrenades.delete(grenadeId);
+      applyGrenadeExplosion(room, grenade, position);
+      sendToRoom(room.id, {
+        type: "grenade:explode",
+        id: grenadeId,
+        position,
+        radius: GRENADE_BLAST_RADIUS
       });
       return;
     }
@@ -424,6 +639,11 @@ wss.on("connection", (ws) => {
       const room = rooms.get(ws.meta.roomId);
       room?.players.delete(ws.meta.id);
       if (room) {
+        room.activeGrenades.forEach((grenade, grenadeId) => {
+          if (grenade.ownerId === ws.meta.id) {
+            room.activeGrenades.delete(grenadeId);
+          }
+        });
         if (room.players.size === 0) stopDevBot(room);
         sendRoomPlayers(room.id);
       }
