@@ -92,6 +92,7 @@ scene.add(camera);
 
 const viewModel = createViewModel();
 camera.add(viewModel);
+setActiveWeaponModel(state.weapon);
 
 const hemi = new THREE.HemisphereLight(0xa2c2ff, 0x203040, 1.1);
 scene.add(hemi);
@@ -287,8 +288,16 @@ function createViewModel() {
 
   const armMaterial = new THREE.MeshStandardMaterial({ color: 0xd1a57b, roughness: 0.82 });
   const sleeveMaterial = new THREE.MeshStandardMaterial({ color: 0x2b3f66, roughness: 0.88 });
-  const weaponMaterial = new THREE.MeshStandardMaterial({ color: 0x2a2a2e, roughness: 0.45, metalness: 0.35 });
-  const weaponAccent = new THREE.MeshStandardMaterial({ color: 0x6f6f77, roughness: 0.35, metalness: 0.65 });
+  const metalDark = new THREE.MeshStandardMaterial({ color: 0x2a2a2e, roughness: 0.45, metalness: 0.35 });
+  const metalAccent = new THREE.MeshStandardMaterial({ color: 0x6f6f77, roughness: 0.35, metalness: 0.65 });
+  const woodMaterial = new THREE.MeshStandardMaterial({ color: 0x6f4a2a, roughness: 0.8, metalness: 0.05 });
+  const scopeGlass = new THREE.MeshStandardMaterial({
+    color: 0x4cb7ff,
+    roughness: 0.15,
+    metalness: 0.25,
+    transparent: true,
+    opacity: 0.78
+  });
 
   const forearm = new THREE.Mesh(new THREE.CapsuleGeometry(0.085, 0.36, 6, 12), armMaterial);
   forearm.rotation.z = 0.85;
@@ -302,27 +311,96 @@ function createViewModel() {
   sleeve.position.set(-0.18, -0.22, 0.2);
   group.add(sleeve);
 
-  const weaponBody = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.14, 0.74), weaponMaterial);
-  weaponBody.position.set(-0.03, -0.19, -0.3);
-  weaponBody.rotation.y = -0.04;
-  group.add(weaponBody);
+  const ak47 = new THREE.Group();
+  const akBody = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.14, 0.74), metalDark);
+  akBody.position.set(-0.03, -0.19, -0.3);
+  akBody.rotation.y = -0.04;
+  ak47.add(akBody);
+  const akBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, 0.62, 12), metalAccent);
+  akBarrel.rotation.x = Math.PI / 2;
+  akBarrel.position.set(-0.02, -0.18, -0.66);
+  ak47.add(akBarrel);
+  const akGrip = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.2, 0.08), metalDark);
+  akGrip.position.set(-0.06, -0.29, -0.13);
+  akGrip.rotation.z = 0.18;
+  ak47.add(akGrip);
+  const akMagazine = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.26, 0.1), metalDark);
+  akMagazine.position.set(-0.02, -0.33, -0.21);
+  akMagazine.rotation.z = -0.16;
+  ak47.add(akMagazine);
 
-  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.032, 0.62, 12), weaponAccent);
-  barrel.rotation.x = Math.PI / 2;
-  barrel.position.set(-0.02, -0.18, -0.66);
-  group.add(barrel);
+  const shotgun = new THREE.Group();
+  shotgun.position.set(-0.015, -0.005, 0.01);
+  const sgBody = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.15, 0.5), metalDark);
+  sgBody.position.set(-0.03, -0.2, -0.24);
+  shotgun.add(sgBody);
+  const sgBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.78, 12), metalAccent);
+  sgBarrel.rotation.x = Math.PI / 2;
+  sgBarrel.position.set(-0.03, -0.19, -0.72);
+  shotgun.add(sgBarrel);
+  const sgPump = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.09, 0.2), woodMaterial);
+  sgPump.position.set(-0.03, -0.24, -0.5);
+  shotgun.add(sgPump);
+  const sgStock = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.12, 0.22), woodMaterial);
+  sgStock.position.set(-0.04, -0.23, 0.02);
+  sgStock.rotation.x = -0.18;
+  shotgun.add(sgStock);
 
-  const grip = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.2, 0.08), weaponMaterial);
-  grip.position.set(-0.06, -0.29, -0.13);
-  grip.rotation.z = 0.18;
-  group.add(grip);
+  const sniper = new THREE.Group();
+  sniper.position.set(0.005, -0.01, 0.015);
+  const snBody = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.12, 0.82), metalDark);
+  snBody.position.set(-0.02, -0.19, -0.34);
+  sniper.add(snBody);
+  const snBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.92, 12), metalAccent);
+  snBarrel.rotation.x = Math.PI / 2;
+  snBarrel.position.set(-0.015, -0.18, -0.84);
+  sniper.add(snBarrel);
+  const snScopeBody = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.36, 16), metalAccent);
+  snScopeBody.rotation.x = Math.PI / 2;
+  snScopeBody.position.set(-0.015, -0.1, -0.41);
+  sniper.add(snScopeBody);
+  const snScopeLens = new THREE.Mesh(new THREE.CircleGeometry(0.038, 20), scopeGlass);
+  snScopeLens.position.set(-0.015, -0.1, -0.23);
+  sniper.add(snScopeLens);
+  const snStock = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.11, 0.28), woodMaterial);
+  snStock.position.set(-0.03, -0.24, 0.02);
+  snStock.rotation.x = -0.22;
+  sniper.add(snStock);
 
-  const muzzle = new THREE.Object3D();
-  muzzle.position.set(-0.02, -0.18, -0.96);
-  group.add(muzzle);
-  group.userData.muzzle = muzzle;
+  group.add(ak47);
+  group.add(shotgun);
+  group.add(sniper);
+
+  const muzzleAk = new THREE.Object3D();
+  muzzleAk.position.set(-0.02, -0.18, -0.98);
+  ak47.add(muzzleAk);
+
+  const muzzleShotgun = new THREE.Object3D();
+  muzzleShotgun.position.set(-0.03, -0.19, -1.04);
+  shotgun.add(muzzleShotgun);
+
+  const muzzleSniper = new THREE.Object3D();
+  muzzleSniper.position.set(-0.015, -0.18, -1.19);
+  sniper.add(muzzleSniper);
+
+  group.userData.weaponModels = { ak47, shotgun, sniper };
+  group.userData.muzzles = { ak47: muzzleAk, shotgun: muzzleShotgun, sniper: muzzleSniper };
+  group.userData.activeMuzzle = muzzleAk;
+  group.userData.activeWeapon = "ak47";
 
   return group;
+}
+
+function setActiveWeaponModel(weapon) {
+  const weaponModels = viewModel?.userData?.weaponModels;
+  const muzzles = viewModel?.userData?.muzzles;
+  if (!weaponModels || !muzzles) return;
+  const key = WEAPON_STATS[weapon] ? weapon : "ak47";
+  Object.keys(weaponModels).forEach((name) => {
+    weaponModels[name].visible = name === key;
+  });
+  viewModel.userData.activeMuzzle = muzzles[key] || muzzles.ak47;
+  viewModel.userData.activeWeapon = key;
 }
 
 function connect() {
@@ -349,6 +427,10 @@ function connect() {
       state.roomId = msg.roomId;
       state.team = msg.team;
       state.weapon = msg.weapon;
+      setActiveWeaponModel(state.weapon);
+      weaponChoice.querySelectorAll("button").forEach((b) => {
+        b.classList.toggle("active", b.getAttribute("data-weapon") === state.weapon);
+      });
       enterGame();
       return;
     }
@@ -495,6 +577,7 @@ weaponChoice.addEventListener("click", (event) => {
   const weapon = target.getAttribute("data-weapon");
   state.weapon = weapon;
   state.isAiming = false;
+  setActiveWeaponModel(weapon);
   weaponChoice.querySelectorAll("button").forEach((b) => b.classList.remove("active"));
   target.classList.add("active");
   hudWeapon.textContent = `Arme: ${weaponLabel(weapon)}`;
@@ -664,7 +747,7 @@ function shoot() {
   if (now - state.lastShotAt < msBetweenShots) return;
   state.lastShotAt = now;
 
-  const muzzle = viewModel.userData.muzzle;
+  const muzzle = viewModel.userData.activeMuzzle || viewModel.userData.muzzle;
   const spawnPos = new THREE.Vector3();
   muzzle.getWorldPosition(spawnPos);
   const origin = { x: spawnPos.x, y: spawnPos.y, z: spawnPos.z };
