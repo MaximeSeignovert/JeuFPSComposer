@@ -28,6 +28,8 @@ const state = {
   isAlive: true,
   respawnUntil: 0,
   respawnDelayMs: 3200,
+  deathKillerId: null,
+  deathKillerName: "",
   joined: false,
   pauseOpen: false
 };
@@ -35,6 +37,7 @@ const state = {
 const BASE_FOV = 74;
 const PLAYER_NAME_STORAGE_KEY = "fps.playerName";
 const MAP_HALF_SIZE = 40;
+const REMOTE_INTERP_SPEED = 12;
 const WEAPON_STATS = {
   shotgun: {
     label: "Fusil a pompe",
@@ -90,6 +93,9 @@ const hudWeapon = document.getElementById("hudWeapon");
 const hudHealth = document.getElementById("hudHealth");
 const hudHealthFill = document.getElementById("hudHealthFill");
 const respawnNotice = document.getElementById("respawnNotice");
+const deathScreen = document.getElementById("deathScreen");
+const deathKillerName = document.getElementById("deathKillerName");
+const deathCountdown = document.getElementById("deathCountdown");
 const canvas = document.getElementById("gameCanvas");
 
 function sanitizePlayerName(rawName) {
@@ -427,13 +433,72 @@ function updateTeamHud() {
   });
 }
 
+function ensureRemotePlayer(id) {
+  let remotePlayer = remoteMeshes.get(id);
+  if (!remotePlayer) {
+    const root = createPlayerMesh(false);
+    scene.add(root);
+    remotePlayer = { root, targetPosition: null, targetRotationY: 0 };
+    remoteMeshes.set(id, remotePlayer);
+  }
+  remotePlayer.id = id;
+  remotePlayer.root.userData.playerId = id;
+  if (remotePlayer.root.userData.hitbox) {
+    remotePlayer.root.userData.hitbox.userData.playerId = id;
+  }
+  return remotePlayer;
+}
+
+function applyRemoteSnapshot(remotePlayer, payload, snap = false) {
+  if (!payload?.position) return;
+  const groundOffset = Number(remotePlayer.root.userData.groundOffset) || 0;
+  const targetPos = new THREE.Vector3(
+    payload.position.x,
+    payload.position.y - groundOffset,
+    payload.position.z
+  );
+  const targetRot = Number(payload.rotationY) || 0;
+
+  if (snap || !remotePlayer.targetPosition) {
+    remotePlayer.root.position.copy(targetPos);
+    remotePlayer.root.rotation.y = targetRot;
+  }
+  remotePlayer.targetPosition = targetPos;
+  remotePlayer.targetRotationY = targetRot;
+}
+
+function updateRemotePlayers(delta) {
+  const t = THREE.MathUtils.clamp(delta * REMOTE_INTERP_SPEED, 0, 1);
+  remoteMeshes.forEach((remotePlayer) => {
+    if (!remotePlayer?.targetPosition) return;
+    remotePlayer.root.position.lerp(remotePlayer.targetPosition, t);
+    remotePlayer.root.rotation.y = lerpAngle(
+      remotePlayer.root.rotation.y,
+      remotePlayer.targetRotationY || 0,
+      t
+    );
+  });
+}
+
+function lerpAngle(from, to, t) {
+  const delta = Math.atan2(Math.sin(to - from), Math.cos(to - from));
+  return from + delta * t;
+}
+
 function setLocalAlive(alive) {
   state.isAlive = Boolean(alive);
   if (!state.isAlive) {
     state.isFiring = false;
     state.isAiming = false;
     sniperScope.classList.add("hidden");
+    if (document.pointerLockElement === canvas) {
+      document.exitPointerLock();
+    }
+    return;
   }
+  state.deathKillerId = null;
+  state.deathKillerName = "";
+  deathScreen?.classList.add("hidden");
 }
 
 function updateRespawnNotice() {
@@ -441,10 +506,40 @@ function updateRespawnNotice() {
     respawnNotice.classList.add("hidden");
     return;
   }
+  respawnNotice.classList.add("hidden");
+}
+
+function updateDeathScreen() {
+  if (!state.joined || state.isAlive) {
+    deathScreen?.classList.add("hidden");
+    return;
+  }
   const left = Math.max(0, state.respawnUntil - performance.now());
   const seconds = Math.ceil(left / 1000);
-  respawnNotice.textContent = `Vous etes mort. Respawn dans ${seconds}s...`;
-  respawnNotice.classList.remove("hidden");
+  if (deathKillerName) {
+    deathKillerName.textContent = state.deathKillerName || "Inconnu";
+  }
+  if (deathCountdown) {
+    deathCountdown.textContent = `Respawn dans ${seconds}s...`;
+  }
+  deathScreen?.classList.remove("hidden");
+}
+
+function updateDeathCamera(delta) {
+  if (state.isAlive || !state.deathKillerId) return;
+  const killer = remoteMeshes.get(state.deathKillerId);
+  if (!killer?.root?.visible) return;
+
+  const focusPos = killer.root.position.clone().add(new THREE.Vector3(0, 1.35, 0));
+  const killerForward = new THREE.Vector3(
+    Math.sin(killer.root.rotation.y || 0),
+    0,
+    Math.cos(killer.root.rotation.y || 0)
+  );
+  const desiredCam = focusPos.clone().addScaledVector(killerForward, -3.3);
+  desiredCam.y += 1.1;
+  camera.position.lerp(desiredCam, THREE.MathUtils.clamp(delta * 4.2, 0, 1));
+  camera.lookAt(focusPos);
 }
 
 const localBody = createPlayerMesh(true);
@@ -694,24 +789,9 @@ function connect() {
     if (msg.type === "player:update") {
       if (!msg.id) return;
       if (msg.id === state.playerId) return;
-      let remotePlayer = remoteMeshes.get(msg.id);
-      if (!remotePlayer) {
-        const root = createPlayerMesh(false);
-        scene.add(root);
-        remotePlayer = { root };
-        remoteMeshes.set(msg.id, remotePlayer);
-      }
-      remotePlayer.id = msg.id;
+      const remotePlayer = ensureRemotePlayer(msg.id);
       remotePlayer.team = msg.team || remotePlayer.team || null;
-      remotePlayer.root.userData.playerId = msg.id;
-      if (remotePlayer.root.userData.hitbox) {
-        remotePlayer.root.userData.hitbox.userData.playerId = msg.id;
-      }
-      if (msg.position) {
-        const groundOffset = Number(remotePlayer.root.userData.groundOffset) || 0;
-        remotePlayer.root.position.set(msg.position.x, msg.position.y - groundOffset, msg.position.z);
-        remotePlayer.root.rotation.y = msg.rotationY || 0;
-      }
+      applyRemoteSnapshot(remotePlayer, msg, false);
       setRemoteAliveVisual(remotePlayer.root, msg.alive !== false);
       if (msg.name || msg.team) {
         const nameTag = remotePlayer.root.userData.nameTag;
@@ -734,6 +814,8 @@ function connect() {
 
     if (msg.type === "player:died") {
       if (msg.id === state.playerId) {
+        state.deathKillerId = msg.killerId || null;
+        state.deathKillerName = String(msg.killerName || "Inconnu");
         setLocalAlive(false);
         state.respawnUntil = performance.now() + state.respawnDelayMs;
       } else {
@@ -868,24 +950,9 @@ function updatePlayerList(players) {
 
   players.forEach((p) => {
     if (!p.id || p.id === state.playerId) return;
-    let remotePlayer = remoteMeshes.get(p.id);
-    if (!remotePlayer) {
-      const root = createPlayerMesh(false);
-      scene.add(root);
-      remotePlayer = { root };
-      remoteMeshes.set(p.id, remotePlayer);
-    }
-    remotePlayer.id = p.id;
+    const remotePlayer = ensureRemotePlayer(p.id);
     remotePlayer.team = p.team || remotePlayer.team || null;
-    remotePlayer.root.userData.playerId = p.id;
-    if (remotePlayer.root.userData.hitbox) {
-      remotePlayer.root.userData.hitbox.userData.playerId = p.id;
-    }
-    if (p.position) {
-      const groundOffset = Number(remotePlayer.root.userData.groundOffset) || 0;
-      remotePlayer.root.position.set(p.position.x, p.position.y - groundOffset, p.position.z);
-      remotePlayer.root.rotation.y = p.rotationY || 0;
-    }
+    applyRemoteSnapshot(remotePlayer, p, true);
     updateNameTagSprite(remotePlayer.root.userData.nameTag, p.name || "Player", p.team || null);
     applyRemoteTeamStyle(remotePlayer.root, p.team);
     setRemoteAliveVisual(remotePlayer.root, p.alive !== false);
@@ -1141,6 +1208,7 @@ function animate() {
 
   updateZoomState();
   updateRespawnNotice();
+  updateDeathScreen();
   camera.rotation.set(state.pitch, state.yaw, 0, "YXZ");
   updateMovement(delta);
   if (
@@ -1152,6 +1220,8 @@ function animate() {
     shoot();
   }
   animateViewModel(delta);
+  updateRemotePlayers(delta);
+  updateDeathCamera(delta);
   updateBullets(delta);
   updateFlashes(delta);
   updateImpacts(delta);

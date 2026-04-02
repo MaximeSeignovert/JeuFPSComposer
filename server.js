@@ -10,7 +10,7 @@ const wss = new WebSocket.Server({ server });
 
 const DEFAULT_PORT = 3000;
 const PORT = Number(process.env.PORT || DEFAULT_PORT);
-const MAX_ROOMS = 6;
+const MAX_ROOMS = 1;
 const ROOM_SIZE = 10;
 const TEAM_SIZE = 5;
 const MAX_HEALTH = 100;
@@ -99,9 +99,15 @@ function pickTeam(room) {
     if (playerWs.meta?.team === "alpha") alpha += 1;
     else if (playerWs.meta?.team === "bravo") bravo += 1;
   });
-  if (alpha < TEAM_SIZE) return "alpha";
-  if (bravo < TEAM_SIZE) return "bravo";
-  return null;
+  const alphaAvailable = alpha < TEAM_SIZE;
+  const bravoAvailable = bravo < TEAM_SIZE;
+  if (!alphaAvailable && !bravoAvailable) return null;
+  if (alphaAvailable && !bravoAvailable) return "alpha";
+  if (!alphaAvailable && bravoAvailable) return "bravo";
+
+  if (alpha < bravo) return "alpha";
+  if (bravo < alpha) return "bravo";
+  return Math.random() < 0.5 ? "alpha" : "bravo";
 }
 
 function getTeamCounts(room) {

@@ -25,19 +25,24 @@
         <div class="hud-left">
           <strong id="hudRoom">Room ?</strong>
           <span id="hudTeam">Equipe ?</span>
-          <div class="hud-health-wrap">
-            <span id="hudHealth">Vie: 100</span>
-            <div class="hud-health-bar">
-              <div id="hudHealthFill" class="hud-health-fill"></div>
-            </div>
-          </div>
         </div>
         <div class="hud-right">
           <span id="hudWeapon">Arme: AK47</span>
           <span>WASD + Souris</span>
         </div>
+        <div class="hud-health-wrap">
+          <span id="hudHealth">Vie: 100</span>
+          <div class="hud-health-bar">
+            <div id="hudHealthFill" class="hud-health-fill"></div>
+          </div>
+        </div>
       </section>
       <section id="respawnNotice" class="respawn-notice hidden"></section>
+      <section id="deathScreen" class="death-screen hidden">
+        <h2>ELIMINE</h2>
+        <p>Tu as ete tue par <strong id="deathKillerName">Inconnu</strong></p>
+        <p id="deathCountdown">Respawn dans 3s...</p>
+      </section>
       <section id="pauseMenu" class="pause-menu hidden">
         <h3>Menu pause</h3>
         <p class="subtitle">Appuie sur Echap pour ouvrir/fermer ce menu.</p>
