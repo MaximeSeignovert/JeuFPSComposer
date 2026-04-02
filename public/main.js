@@ -156,8 +156,8 @@ function addStaticWorldMesh(mesh, includePhysics = true) {
 }
 
 const mapConfig = {
-  platform: { width: 18, depth: 14, topY: 3.6, baseY: 1.8 },
-  ramp: { width: 6, depth: 6.2, topY: 3.6, baseY: 0, thickness: 0.4 }
+  platform: { width: 16, depth: 12, topY: 3.2, baseY: 1.6 },
+  ramp: { width: 7, depth: 6.2, topY: 3.2, baseY: 0, thickness: 0.32 }
 };
 
 const platform = new THREE.Mesh(
@@ -166,23 +166,10 @@ const platform = new THREE.Mesh(
     mapConfig.platform.baseY * 2,
     mapConfig.platform.depth
   ),
-  new THREE.MeshStandardMaterial({ color: 0xc8b07f, roughness: 0.72, metalness: 0.03 })
+  new THREE.MeshStandardMaterial({ color: 0xe4d1a9, roughness: 0.72, metalness: 0.03 })
 );
 platform.position.set(0, mapConfig.platform.baseY, 0);
 addStaticWorldMesh(platform);
-
-const platformTopMaterial = new THREE.MeshStandardMaterial({
-  color: 0xe4d1a9,
-  roughness: 0.68,
-  metalness: 0.04
-});
-
-const platformCap = new THREE.Mesh(
-  new THREE.BoxGeometry(mapConfig.platform.width - 0.6, 0.36, mapConfig.platform.depth - 0.6),
-  platformTopMaterial
-);
-platformCap.position.set(0, mapConfig.platform.topY - 0.18, 0);
-addStaticWorldMesh(platformCap);
 
 const rampRise = mapConfig.ramp.topY - mapConfig.ramp.baseY;
 const rampAngle = Math.atan2(rampRise, mapConfig.ramp.width);
@@ -258,18 +245,6 @@ addStaticWorldMesh(backWall);
 const frontWall = backWall.clone();
 frontWall.position.z = 42;
 addStaticWorldMesh(frontWall);
-
-const topRailMaterial = new THREE.MeshStandardMaterial({ color: 0xe94f7a, roughness: 0.84 });
-const topRailFront = new THREE.Mesh(
-  new THREE.BoxGeometry(mapConfig.platform.width + 1, 1.1, 1.4),
-  topRailMaterial
-);
-topRailFront.position.set(0, mapConfig.platform.topY + 0.55, mapConfig.platform.depth / 2 - 0.7);
-addStaticWorldMesh(topRailFront);
-
-const topRailBack = topRailFront.clone();
-topRailBack.position.z = -(mapConfig.platform.depth / 2 - 0.7);
-addStaticWorldMesh(topRailBack);
 
 const localMaterial = new THREE.MeshStandardMaterial({ color: 0x45e0a8 });
 const remoteMeshes = new Map();
@@ -1066,7 +1041,7 @@ function isCollidingAt(x, z, playerBottom, playerTop) {
 }
 
 function getGroundHeightAt(x, z, feetY = 0) {
-  const rampSnapTolerance = 0.35;
+  const rampSnapTolerance = 0.2;
   const halfPlatformW = mapConfig.platform.width / 2;
   const halfPlatformD = mapConfig.platform.depth / 2;
   const halfRampD = mapConfig.ramp.depth / 2;
