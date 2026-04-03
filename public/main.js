@@ -1,4 +1,4 @@
-import * as THREE from "https://unpkg.com/three@0.164.1/build/three.module.js";
+﻿import * as THREE from "https://unpkg.com/three@0.164.1/build/three.module.js";
 
 const state = {
   ws: null,
@@ -44,18 +44,43 @@ const state = {
 
 const BASE_FOV = 74;
 const PLAYER_NAME_STORAGE_KEY = "fps.playerName";
+const KEY_BINDINGS_STORAGE_KEY = "fps.keyBindings";
+const DEFAULT_KEY_BINDINGS = {
+  forward: "KeyW",
+  back: "KeyS",
+  left: "KeyA",
+  right: "KeyD",
+  sprint: "ShiftLeft",
+  jump: "Space",
+  grenade: "KeyG",
+  pause: "Escape"
+};
+const KEY_BINDING_ROWS = [
+  { id: "forward", label: "Avancer" },
+  { id: "back", label: "Reculer" },
+  { id: "left", label: "Strafe gauche" },
+  { id: "right", label: "Strafe droite" },
+  { id: "sprint", label: "Sprint" },
+  { id: "jump", label: "Sauter" },
+  { id: "grenade", label: "Grenade" },
+  { id: "pause", label: "Pause / menu" }
+];
 const MAP_HALF_SIZE = 40;
 const REMOTE_INTERP_SPEED = 12;
 const VIEW_RECOIL_DECAY = 15;
 const VIEW_RECOIL_BOB_SUPPRESS_K = 0.48;
 const VIEW_RECOIL_NORM_CAP = 0.16;
+/** 0–1 : transition visée épaule (AK / pompe) vers alignement sous le réticule */
+let aimViewBlend = 0;
 const WEAPON_STATS = {
   shotgun: {
     label: "Fusil a pompe",
     fireRate: 1.0,
-    pellets: 6,
-    spread: 0.07,
-    damage: 14,
+    pellets: 12,
+    spreadX: 0.18,
+    spreadY: 0.04,
+    spread: 0.12, // fallback
+    damage: 12,
     range: 22,
     bulletSpeed: 120,
     auto: false,
@@ -118,6 +143,10 @@ const hudTeam = document.getElementById("hudTeam");
 const hudWeapon = document.getElementById("hudWeapon");
 const hudWeaponName = document.getElementById("hudWeaponName");
 const hudGrenade = document.getElementById("hudGrenade");
+const hudGrenadeKey = document.getElementById("hudGrenadeKey");
+const hudControlsHint = document.getElementById("hudControlsHint");
+const keyBindingsList = document.getElementById("keyBindingsList");
+const keyBindingsReset = document.getElementById("keyBindingsReset");
 const hudHealth = document.getElementById("hudHealth");
 const hudHealthFill = document.getElementById("hudHealthFill");
 const respawnNotice = document.getElementById("respawnNotice");
@@ -151,6 +180,148 @@ nameInput.value = loadPlayerName();
 nameInput.addEventListener("input", () => {
   savePlayerName(nameInput.value);
 });
+
+const KEY_LABEL_FR = {
+  Escape: "Échap",
+  Space: "Espace",
+  ShiftLeft: "Maj gauche",
+  ShiftRight: "Maj droite",
+  ControlLeft: "Ctrl gauche",
+  ControlRight: "Ctrl droite",
+  AltLeft: "Alt gauche",
+  AltRight: "Alt droite",
+  Tab: "Tab",
+  Enter: "Entrée",
+  Backspace: "Retour",
+  CapsLock: "Verr. maj",
+  ArrowUp: "↑",
+  ArrowDown: "↓",
+  ArrowLeft: "←",
+  ArrowRight: "→"
+};
+
+function formatKeyLabel(code) {
+  if (!code) return "?";
+  if (KEY_LABEL_FR[code]) return KEY_LABEL_FR[code];
+  if (code.startsWith("Key") && code.length === 4) return code.slice(3);
+  if (code.startsWith("Digit")) return code.slice(5);
+  if (code.startsWith("Numpad")) return "Pav. " + code.slice(6);
+  return code;
+}
+
+function loadKeyBindings() {
+  const merged = { ...DEFAULT_KEY_BINDINGS };
+  try {
+    const raw = localStorage.getItem(KEY_BINDINGS_STORAGE_KEY);
+    if (!raw) return merged;
+    const parsed = JSON.parse(raw);
+    if (typeof parsed !== "object" || !parsed) return merged;
+    for (const id of Object.keys(DEFAULT_KEY_BINDINGS)) {
+      if (typeof parsed[id] === "string" && parsed[id].length) merged[id] = parsed[id];
+    }
+  } catch {
+    // ignore
+  }
+  return merged;
+}
+
+function saveKeyBindings() {
+  try {
+    localStorage.setItem(KEY_BINDINGS_STORAGE_KEY, JSON.stringify(keyBindings));
+  } catch {
+    // ignore
+  }
+}
+
+const keyBindings = loadKeyBindings();
+let rebindTarget = null;
+
+function assignKeyBinding(action, newCode) {
+  const old = keyBindings[action];
+  if (old === newCode) return;
+  const conflict = Object.entries(keyBindings).find(([k, v]) => k !== action && v === newCode);
+  if (conflict) keyBindings[conflict[0]] = old;
+  keyBindings[action] = newCode;
+  saveKeyBindings();
+}
+
+function syncKeyBindListeningClass() {
+  if (!keyBindingsList) return;
+  keyBindingsList.querySelectorAll(".key-bind-row__btn").forEach((btn) => {
+    btn.classList.toggle("is-listening", btn.dataset.action === rebindTarget);
+  });
+}
+
+function refreshKeyBindingButtons() {
+  if (!keyBindingsList) return;
+  keyBindingsList.querySelectorAll(".key-bind-row__btn").forEach((btn) => {
+    const id = btn.dataset.action;
+    if (id && keyBindings[id]) btn.textContent = formatKeyLabel(keyBindings[id]);
+  });
+}
+
+function buildKeyBindingsUi() {
+  if (!keyBindingsList) return;
+  keyBindingsList.innerHTML = "";
+  for (const row of KEY_BINDING_ROWS) {
+    const wrap = document.createElement("div");
+    wrap.className = "key-bind-row";
+    const lab = document.createElement("span");
+    lab.className = "key-bind-row__label";
+    lab.textContent = row.label;
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "key-bind-row__btn";
+    btn.dataset.action = row.id;
+    btn.textContent = formatKeyLabel(keyBindings[row.id]);
+    btn.addEventListener("click", () => {
+      rebindTarget = rebindTarget === row.id ? null : row.id;
+      syncKeyBindListeningClass();
+    });
+    wrap.appendChild(lab);
+    wrap.appendChild(btn);
+    keyBindingsList.appendChild(wrap);
+  }
+}
+
+function updateHudKeyHints() {
+  const kb = keyBindings;
+  const move = [kb.forward, kb.left, kb.back, kb.right].map(formatKeyLabel).join(" ");
+  if (hudControlsHint) hudControlsHint.textContent = `${move} + souris`;
+  if (hudGrenadeKey) hudGrenadeKey.textContent = formatKeyLabel(kb.grenade);
+  updateGrenadeHud();
+}
+
+function onKeydownCaptureForRebind(e) {
+  if (!rebindTarget || !state.pauseOpen) return;
+  e.preventDefault();
+  e.stopImmediatePropagation();
+  if (e.repeat) return;
+  if (e.code === "Escape") {
+    rebindTarget = null;
+    syncKeyBindListeningClass();
+    return;
+  }
+  assignKeyBinding(rebindTarget, e.code);
+  rebindTarget = null;
+  syncKeyBindListeningClass();
+  refreshKeyBindingButtons();
+  updateHudKeyHints();
+}
+
+buildKeyBindingsUi();
+if (keyBindingsReset) {
+  keyBindingsReset.addEventListener("click", () => {
+    Object.assign(keyBindings, DEFAULT_KEY_BINDINGS);
+    saveKeyBindings();
+    refreshKeyBindingButtons();
+    updateHudKeyHints();
+    rebindTarget = null;
+    syncKeyBindListeningClass();
+  });
+}
+window.addEventListener("keydown", onKeydownCaptureForRebind, true);
+updateHudKeyHints();
 
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -904,17 +1075,20 @@ function createViewModel() {
     opacity: 0.78
   });
 
+  const armGroup = new THREE.Group();
+  group.add(armGroup);
+
   const forearm = new THREE.Mesh(new THREE.CapsuleGeometry(0.085, 0.36, 6, 12), armMaterial);
   forearm.rotation.z = 0.85;
   forearm.rotation.x = -0.16;
   forearm.position.set(-0.12, -0.16, 0.14);
-  group.add(forearm);
+  armGroup.add(forearm);
 
   const sleeve = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.11, 0.22, 12), sleeveMaterial);
   sleeve.rotation.z = 0.9;
   sleeve.rotation.x = -0.2;
   sleeve.position.set(-0.18, -0.22, 0.2);
-  group.add(sleeve);
+  armGroup.add(sleeve);
 
   const ak47 = new THREE.Group();
   const akReceiver = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.12, 0.45), metalDark);
@@ -1064,6 +1238,7 @@ function createViewModel() {
 
   group.userData.weaponModels = { ak47, shotgun, sniper };
   group.userData.muzzles = { ak47: muzzleAk, shotgun: muzzleShotgun, sniper: muzzleSniper };
+  group.userData.armGroup = armGroup;
   group.userData.activeMuzzle = muzzleAk;
   group.userData.activeWeapon = "ak47";
 
@@ -1270,6 +1445,8 @@ function enterGame() {
 function setPauseMenu(open) {
   if (!state.joined) return;
   state.pauseOpen = open;
+  rebindTarget = null;
+  syncKeyBindListeningClass();
   pauseMenuOverlay.classList.toggle("hidden", !open);
   crosshair.classList.toggle("hidden", open);
   sniperScope.classList.add("hidden");
@@ -1315,7 +1492,11 @@ function updateGrenadeHud() {
   const has = state.grenadesHeld >= 1;
   hudGrenade.classList.toggle("hud-grenade--ready", has);
   hudGrenade.classList.toggle("hud-grenade--empty", !has);
-  hudGrenade.setAttribute("aria-label", has ? "Grenade prête, touche G pour lancer" : "Pas de grenade");
+  const gLabel = formatKeyLabel(keyBindings.grenade);
+  hudGrenade.setAttribute(
+    "aria-label",
+    has ? `Grenade prête, touche ${gLabel} pour lancer` : "Pas de grenade"
+  );
 }
 
 function updateZoomState() {
@@ -1406,12 +1587,12 @@ window.addEventListener("resize", () => {
 });
 
 document.addEventListener("keydown", (e) => {
-  if (e.code === "Escape" && state.joined) {
+  if (e.code === keyBindings.pause && state.joined) {
     e.preventDefault();
     togglePauseMenu();
     return;
   }
-  if (e.code === "KeyG") {
+  if (e.code === keyBindings.grenade) {
     if (state.joined && !state.pauseOpen && state.isAlive) {
       e.preventDefault();
       throwGrenade();
@@ -1419,7 +1600,7 @@ document.addEventListener("keydown", (e) => {
     return;
   }
   state.keys.add(e.code);
-  if (e.code === "Space" && state.joined && !state.pauseOpen && state.onGround) {
+  if (e.code === keyBindings.jump && state.joined && !state.pauseOpen && state.onGround) {
     if (!state.isAlive) return;
     state.verticalVelocity = state.jumpSpeed;
     state.onGround = false;
@@ -1486,14 +1667,15 @@ function updateMovement(delta) {
     return;
   }
   const previousPos = camera.position.clone();
-  const fwd = Number(state.keys.has("KeyW")) - Number(state.keys.has("KeyS"));
-  const right = Number(state.keys.has("KeyD")) - Number(state.keys.has("KeyA"));
+  const kb = keyBindings;
+  const fwd = Number(state.keys.has(kb.forward)) - Number(state.keys.has(kb.back));
+  const right = Number(state.keys.has(kb.right)) - Number(state.keys.has(kb.left));
   const dir = new THREE.Vector3();
   camera.getWorldDirection(dir);
   dir.y = 0;
   dir.normalize();
   const side = new THREE.Vector3(-dir.z, 0, dir.x).normalize();
-  const isSprinting = state.keys.has("ShiftLeft") || state.keys.has("ShiftRight");
+  const isSprinting = state.keys.has(kb.sprint);
   const speedMultiplier = isSprinting ? state.sprintMultiplier : 1;
   const currentMoveSpeed = state.moveSpeed * speedMultiplier;
 
@@ -1759,6 +1941,16 @@ function animateViewModel(delta) {
   state.viewRecoilRotX *= decay;
   state.viewRecoilRotZ *= decay;
 
+  const wantsAimView =
+    state.joined &&
+    state.isAlive &&
+    !state.pauseOpen &&
+    state.isAiming &&
+    (state.weapon === "ak47" || state.weapon === "shotgun") &&
+    document.pointerLockElement === canvas;
+  const aimTarget = wantsAimView ? 1 : 0;
+  aimViewBlend = THREE.MathUtils.lerp(aimViewBlend, aimTarget, 1 - Math.exp(-14 * delta));
+
   const t = performance.now() * 0.001;
   const intensity = state.movementBlend;
   const recoilNorm = Math.min(
@@ -1773,27 +1965,57 @@ function animateViewModel(delta) {
     state.joined &&
     state.isAlive &&
     !state.pauseOpen &&
-    (state.keys.has("ShiftLeft") || state.keys.has("ShiftRight"));
+    state.keys.has(keyBindings.sprint);
   const sprintFactor = sprinting ? 1.7 : 1;
-  const bobX = 0.008 * sprintFactor;
-  const bobY = 0.008 * sprintFactor;
-  const bobRotZ = 0.014 * sprintFactor;
-  const bobRotX = 0.01 * sprintFactor;
-  const bobRotY = 0.008 * sprintFactor;
+  const bobMul = 1 - 0.55 * aimViewBlend;
+  const bobX = 0.008 * sprintFactor * bobMul;
+  const bobY = 0.008 * sprintFactor * bobMul;
+  const bobRotZ = 0.014 * sprintFactor * bobMul;
+  const bobRotX = 0.01 * sprintFactor * bobMul;
+  const bobRotY = 0.008 * sprintFactor * bobMul;
 
-  viewModel.position.x = 0.3 + Math.sin(t * 9.5 * sprintFactor) * bobX * bobIntensity;
-  viewModel.position.y =
-    -0.31 +
-    Math.cos(t * 7.5 * sprintFactor) * bobY * bobIntensity +
-    (state.onGround ? 0 : -0.03) +
-    state.viewRecoilY;
-  viewModel.position.z =
-    -0.52 + Math.sin(t * 15 * sprintFactor) * 0.004 * bobIntensity + state.viewRecoilZ;
-  viewModel.rotation.z =
-    Math.sin(t * 8.5 * sprintFactor) * bobRotZ * bobIntensity + state.viewRecoilRotZ;
-  viewModel.rotation.x =
-    -0.02 + Math.cos(t * 8 * sprintFactor) * bobRotX * bobIntensity + state.viewRecoilRotX;
-  viewModel.rotation.y = -0.22 + Math.sin(t * 6.7 * sprintFactor) * bobRotY * bobIntensity;
+  const s95 = Math.sin(t * 9.5 * sprintFactor);
+  const c75 = Math.cos(t * 7.5 * sprintFactor);
+  const s15 = Math.sin(t * 15 * sprintFactor);
+  const s85 = Math.sin(t * 8.5 * sprintFactor);
+  const c8 = Math.cos(t * 8 * sprintFactor);
+  const s67 = Math.sin(t * 6.7 * sprintFactor);
+
+  if (viewModel.userData.armGroup) {
+    viewModel.userData.armGroup.position.y = -aimViewBlend * 0.5;
+    viewModel.userData.armGroup.visible = aimViewBlend < 0.8;
+  }
+
+  const isAk = state.weapon === "ak47";
+  const isShotgun = state.weapon === "shotgun";
+  const rotXTarget = isAk ? 0.085 : 0.024;
+  const yTarget = isAk ? 0.0 : 0.1;
+  const xTarget = isShotgun ? 0 : 0.02; // Aligne parfaitement les modèles (origin -0.02) au centre
+
+  const idleX = 0.3 + s95 * bobX * bobIntensity;
+  const adsX = xTarget + s95 * bobX * bobIntensity * 0.35;
+  viewModel.position.x = THREE.MathUtils.lerp(idleX, adsX, aimViewBlend);
+
+  const airY = state.onGround ? 0 : -0.03;
+  const idleY = -0.31 + c75 * bobY * bobIntensity + airY + state.viewRecoilY;
+  const adsY = yTarget + c75 * bobY * bobIntensity * 0.35 + airY + state.viewRecoilY;
+  viewModel.position.y = THREE.MathUtils.lerp(idleY, adsY, aimViewBlend);
+
+  const idleZ = -0.52 + s15 * 0.004 * bobIntensity + state.viewRecoilZ;
+  const adsZ = -0.35 + s15 * 0.004 * bobIntensity * 0.35 + state.viewRecoilZ;
+  viewModel.position.z = THREE.MathUtils.lerp(idleZ, adsZ, aimViewBlend);
+
+  const idleRotZ = s85 * bobRotZ * bobIntensity + state.viewRecoilRotZ;
+  const adsRotZ = 0 + s85 * bobRotZ * bobIntensity * 0.35 + state.viewRecoilRotZ;
+  viewModel.rotation.z = THREE.MathUtils.lerp(idleRotZ, adsRotZ, aimViewBlend);
+
+  const idleRotX = -0.02 + c8 * bobRotX * bobIntensity + state.viewRecoilRotX;
+  const adsRotX = rotXTarget + c8 * bobRotX * bobIntensity * 0.35 + state.viewRecoilRotX;
+  viewModel.rotation.x = THREE.MathUtils.lerp(idleRotX, adsRotX, aimViewBlend);
+
+  const idleRotY = -0.22 + s67 * bobRotY * bobIntensity;
+  const adsRotY = 0 + s67 * bobRotY * bobIntensity * 0.35;
+  viewModel.rotation.y = THREE.MathUtils.lerp(idleRotY, adsRotY, aimViewBlend);
 }
 
 function shoot() {
@@ -1812,14 +2034,21 @@ function shoot() {
   const aimOrigin = { x: camera.position.x, y: camera.position.y, z: camera.position.z };
   const baseDirection = new THREE.Vector3();
   camera.getWorldDirection(baseDirection).normalize();
+
+  const right = new THREE.Vector3().crossVectors(camera.up, baseDirection).normalize();
+  const up = new THREE.Vector3().crossVectors(baseDirection, right).normalize();
+
   const shots = [];
 
   for (let i = 0; i < stats.pellets; i += 1) {
-    const spreadX = (Math.random() - 0.5) * stats.spread;
-    const spreadY = (Math.random() - 0.5) * stats.spread;
+    const sX = stats.spreadX !== undefined ? stats.spreadX : stats.spread;
+    const sY = stats.spreadY !== undefined ? stats.spreadY : stats.spread;
+    const spreadX = (Math.random() - 0.5) * sX;
+    const spreadY = (Math.random() - 0.5) * sY;
     const shotDirection = baseDirection
       .clone()
-      .add(new THREE.Vector3(spreadX, spreadY, 0))
+      .addScaledVector(right, spreadX)
+      .addScaledVector(up, spreadY)
       .normalize();
     const direction = { x: shotDirection.x, y: shotDirection.y, z: shotDirection.z };
     shots.push({

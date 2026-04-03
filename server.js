@@ -69,7 +69,8 @@ function createRoom(id) {
       center: { x: 0, y: 0, z: 0 },
       phase: Math.random() * Math.PI * 2,
       rotationY: 0,
-      timer: null
+      timer: null,
+      respawnTimer: null
     }
   });
 }
@@ -199,15 +200,34 @@ function applyGrenadeExplosion(room, grenade, position) {
     }
   });
 
-  if (victimsToKill.length === 0) {
-    if (damagedSomeone) sendRoomPlayers(room.id);
-    return;
+  if (ENABLE_DEV_BOT && room.devBot?.alive) {
+    const playerPos = room.devBot.position;
+    if (playerPos) {
+      const dx = (Number(playerPos.x) || 0) - (Number(position.x) || 0);
+      const dy = (Number(playerPos.y) || 0) + PLAYER_CENTER_HEIGHT - (Number(position.y) || 0);
+      const dz = (Number(playerPos.z) || 0) - (Number(position.z) || 0);
+      const distance = Math.hypot(dx, dy, dz);
+      if (distance <= GRENADE_BLAST_RADIUS) {
+        const proximity = 1 - distance / GRENADE_BLAST_RADIUS;
+        const gDamage = Math.max(18, Math.round(GRENADE_MAX_DAMAGE * proximity));
+        if (gDamage > 0) {
+          room.devBot.health = Math.max(0, room.devBot.health - gDamage);
+          damagedSomeone = true;
+        }
+      }
+    }
   }
 
   const killerWs = room.players.get(grenade.ownerId) || null;
   victimsToKill.forEach((victimWs) => {
     killAndScheduleRespawn(victimWs, killerWs);
   });
+
+  if (ENABLE_DEV_BOT && room.devBot?.alive && room.devBot.health <= 0) {
+    killDevBotAndScheduleRespawn(room, killerWs);
+  } else if (victimsToKill.length === 0 && damagedSomeone) {
+    sendRoomPlayers(room.id);
+  }
 }
 
 function roomPlayersPayload(room) {
@@ -314,9 +334,63 @@ function startDevBot(room) {
 }
 
 function stopDevBot(room) {
+  if (room?.devBot?.respawnTimer) {
+    clearTimeout(room.devBot.respawnTimer);
+    room.devBot.respawnTimer = null;
+  }
   if (!room?.devBot?.timer) return;
   clearInterval(room.devBot.timer);
   room.devBot.timer = null;
+}
+
+function killDevBotAndScheduleRespawn(room, killerWs = null) {
+  if (!ENABLE_DEV_BOT || !room?.devBot) return;
+  if (!room.devBot.alive) return;
+
+  room.devBot.health = 0;
+  room.devBot.alive = false;
+  room.devBot.deaths += 1;
+
+  if (killerWs?.meta?.id) {
+    killerWs.meta.kills += 1;
+  }
+
+  sendToRoom(room.id, {
+    type: "player:died",
+    id: room.devBot.id,
+    killerId: killerWs?.meta?.id || null,
+    killerName: killerWs?.meta?.name || null
+  });
+  sendRoomPlayers(room.id);
+
+  if (room.devBot.respawnTimer) {
+    clearTimeout(room.devBot.respawnTimer);
+  }
+  room.devBot.respawnTimer = setTimeout(() => {
+    room.devBot.respawnTimer = null;
+    if (room.players.size === 0) return;
+
+    const spawn = getSpawnPosition();
+    room.devBot.health = MAX_HEALTH;
+    room.devBot.alive = true;
+    room.devBot.position = { ...spawn };
+    room.devBot.center = { ...spawn };
+    room.devBot.phase = Math.random() * Math.PI * 2;
+    room.devBot.rotationY = 0;
+
+    sendToRoom(room.id, {
+      type: "player:update",
+      id: room.devBot.id,
+      name: room.devBot.name,
+      team: room.devBot.team,
+      weapon: room.devBot.weapon,
+      health: room.devBot.health,
+      alive: room.devBot.alive,
+      position: room.devBot.position,
+      rotationY: room.devBot.rotationY
+    });
+    sendRoomPlayers(room.id);
+  }, RESPAWN_DELAY_MS);
 }
 
 function killAndScheduleRespawn(victimWs, killerWs = null) {
@@ -609,24 +683,41 @@ wss.on("connection", (ws) => {
       if (!targetId || !Number.isFinite(rawDamage)) return;
       const damage = Math.max(1, Math.min(200, rawDamage));
       const targetWs = room.players.get(targetId);
-      if (!targetWs || !targetWs.meta.alive) return;
-      if (Date.now() < (targetWs.meta.invulnerableUntil || 0)) return;
 
-      targetWs.meta.health = Math.max(0, targetWs.meta.health - damage);
-      if (targetWs.readyState === WebSocket.OPEN) {
-        targetWs.send(
-          JSON.stringify({
-            type: "player:health",
-            health: targetWs.meta.health
-          })
-        );
-      }
+      if (targetWs?.meta?.alive) {
+        if (Date.now() < (targetWs.meta.invulnerableUntil || 0)) return;
 
-      if (targetWs.meta.health > 0) {
-        sendRoomPlayers(room.id);
+        targetWs.meta.health = Math.max(0, targetWs.meta.health - damage);
+        if (targetWs.readyState === WebSocket.OPEN) {
+          targetWs.send(
+            JSON.stringify({
+              type: "player:health",
+              health: targetWs.meta.health
+            })
+          );
+        }
+
+        if (targetWs.meta.health > 0) {
+          sendRoomPlayers(room.id);
+          return;
+        }
+        killAndScheduleRespawn(targetWs, ws);
         return;
       }
-      killAndScheduleRespawn(targetWs, ws);
+
+      if (
+        ENABLE_DEV_BOT &&
+        room.devBot &&
+        targetId === room.devBot.id &&
+        room.devBot.alive
+      ) {
+        room.devBot.health = Math.max(0, room.devBot.health - damage);
+        if (room.devBot.health > 0) {
+          sendRoomPlayers(room.id);
+          return;
+        }
+        killDevBotAndScheduleRespawn(room, ws);
+      }
     }
   });
 

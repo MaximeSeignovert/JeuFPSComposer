@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="fr">
   <head>
     <meta charset="UTF-8" />
@@ -126,11 +126,11 @@
             </div>
             <div class="hud-grenade__meta">
               <span class="hud-grenade__title">Grenade</span>
-              <span class="hud-grenade__key hud-grenade__key--ready"><kbd>G</kbd> lancer</span>
+              <span class="hud-grenade__key hud-grenade__key--ready"><kbd id="hudGrenadeKey">G</kbd> lancer</span>
               <span class="hud-grenade__key hud-grenade__key--empty">Sur la map</span>
             </div>
           </div>
-          <span>WASD + Souris</span>
+          <span id="hudControlsHint">Déplacement + souris</span>
         </div>
         <div class="hud-health-wrap">
           <span id="hudHealth">Vie: 100</span>
@@ -148,7 +148,7 @@
       <div id="pauseMenuOverlay" class="pause-menu-overlay hidden">
       <section id="pauseMenu" class="pause-menu">
         <h3>Menu pause</h3>
-        <p class="subtitle">Appuie sur Echap pour ouvrir/fermer ce menu.</p>
+        <p class="subtitle">Utilise la touche « Pause / menu » (réglable ci-dessous) pour ouvrir ou fermer ce menu.</p>
         <div class="field-row">
           <span>Changer d'arme</span>
           <div id="weaponChoice" class="weapon-choice">
@@ -210,6 +210,14 @@
               </span>
             </button>
           </div>
+        </div>
+        <div class="field-row key-bindings-block">
+          <span>Contrôles clavier</span>
+          <p class="subtitle">Clique sur une ligne puis appuie sur la touche souhaitée. Échap annule.</p>
+          <div id="keyBindingsList" class="key-bindings-list"></div>
+          <button type="button" id="keyBindingsReset" class="key-bindings-reset">
+            Réinitialiser les touches par défaut
+          </button>
         </div>
         <button id="resumeBtn">Reprendre</button>
       </section>

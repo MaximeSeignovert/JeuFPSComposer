@@ -1,4 +1,4 @@
-:root {
+﻿:root {
   --bg: #0a0d12;
   --panel: rgba(14, 19, 30, 0.9);
   --stroke: rgba(134, 166, 255, 0.4);
@@ -785,6 +785,71 @@ button.active {
   background: rgba(5, 8, 14, 0.92);
   padding: 20px;
   backdrop-filter: blur(6px);
+}
+
+.key-bindings-block {
+  margin-top: 14px;
+}
+
+.key-bindings-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.key-bind-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(134, 166, 255, 0.2);
+  background: rgba(6, 10, 18, 0.55);
+}
+
+.key-bind-row__label {
+  font-size: 0.95rem;
+  color: var(--text);
+}
+
+.key-bind-row__btn {
+  min-width: 120px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--stroke);
+  background: rgba(6, 10, 18, 0.85);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.key-bind-row__btn:hover {
+  border-color: rgba(134, 166, 255, 0.55);
+}
+
+.key-bind-row__btn.is-listening {
+  border-color: var(--accent);
+  color: var(--accent);
+  box-shadow: 0 0 0 1px rgba(69, 224, 168, 0.35);
+}
+
+.key-bindings-reset {
+  margin-top: 10px;
+  align-self: flex-start;
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 96, 127, 0.35);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.key-bindings-reset:hover {
+  color: var(--danger);
+  border-color: rgba(255, 96, 127, 0.55);
 }
 
 .respawn-notice {
