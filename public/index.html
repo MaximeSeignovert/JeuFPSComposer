@@ -236,6 +236,22 @@
         <div class="scope-crosshair"></div>
       </section>
       <section id="playerList" class="player-list hidden"></section>
+      <section id="touchControls" class="touch-controls hidden" aria-label="Contrôles tactiles">
+        <div
+          id="touchMoveStick"
+          class="touch-stick touch-stick--move"
+          aria-label="Joystick de déplacement"
+        >
+          <div class="touch-stick__knob"></div>
+        </div>
+        <div class="touch-actions" aria-label="Actions tactiles">
+          <button id="touchPauseBtn" class="touch-action touch-action--small" type="button">II</button>
+          <button id="touchAimBtn" class="touch-action" type="button">Visee</button>
+          <button id="touchJumpBtn" class="touch-action" type="button">Saut</button>
+          <button id="touchGrenadeBtn" class="touch-action" type="button">Grenade</button>
+          <button id="touchFireBtn" class="touch-action touch-action--fire" type="button">Tir</button>
+        </div>
+      </section>
       <canvas id="gameCanvas"></canvas>
     </main>
 

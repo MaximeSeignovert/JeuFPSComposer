@@ -154,6 +154,18 @@ const deathScreen = document.getElementById("deathScreen");
 const deathKillerName = document.getElementById("deathKillerName");
 const deathCountdown = document.getElementById("deathCountdown");
 const canvas = document.getElementById("gameCanvas");
+const touchControls = document.getElementById("touchControls");
+const touchMoveStick = document.getElementById("touchMoveStick");
+const touchFireBtn = document.getElementById("touchFireBtn");
+const touchAimBtn = document.getElementById("touchAimBtn");
+const touchJumpBtn = document.getElementById("touchJumpBtn");
+const touchGrenadeBtn = document.getElementById("touchGrenadeBtn");
+const touchPauseBtn = document.getElementById("touchPauseBtn");
+const mobileControlsQuery = window.matchMedia("(max-width: 820px), (hover: none), (pointer: coarse)");
+const touchInput = {
+  move: { pointerId: null, x: 0, y: 0, strength: 0 },
+  look: { pointerId: null, lastX: 0, lastY: 0 }
+};
 
 function sanitizePlayerName(rawName) {
   const cleaned = String(rawName || "").trim().slice(0, 20);
@@ -287,9 +299,177 @@ function buildKeyBindingsUi() {
 function updateHudKeyHints() {
   const kb = keyBindings;
   const move = [kb.forward, kb.left, kb.back, kb.right].map(formatKeyLabel).join(" ");
-  if (hudControlsHint) hudControlsHint.textContent = `${move} + souris`;
+  if (hudControlsHint) hudControlsHint.textContent = mobileControlsQuery.matches ? "Joystick + glisser" : `${move} + souris`;
   if (hudGrenadeKey) hudGrenadeKey.textContent = formatKeyLabel(kb.grenade);
   updateGrenadeHud();
+}
+
+function shouldUsePointerLock() {
+  return !mobileControlsQuery.matches;
+}
+
+function isTouchControlsActive() {
+  return Boolean(touchControls && !touchControls.classList.contains("hidden"));
+}
+
+function hasGameLookInput() {
+  return document.pointerLockElement === canvas || isTouchControlsActive();
+}
+
+function resetTouchStick(stick, data) {
+  data.pointerId = null;
+  data.x = 0;
+  data.y = 0;
+  data.strength = 0;
+  const knob = stick?.querySelector(".touch-stick__knob");
+  if (knob) knob.style.transform = "translate(-50%, -50%)";
+}
+
+function resetTouchInput() {
+  resetTouchStick(touchMoveStick, touchInput.move);
+  touchInput.look.pointerId = null;
+  touchInput.look.lastX = 0;
+  touchInput.look.lastY = 0;
+  state.isFiring = false;
+  touchFireBtn?.classList.remove("is-active");
+  touchAimBtn?.classList.toggle("is-active", state.isAiming);
+}
+
+function syncTouchControls() {
+  if (!touchControls) return;
+  const show = state.joined && state.isAlive && !state.pauseOpen && mobileControlsQuery.matches;
+  touchControls.classList.toggle("hidden", !show);
+  if (!show) resetTouchInput();
+  updateHudKeyHints();
+}
+
+function updateTouchStickFromEvent(stick, data, event) {
+  const rect = stick.getBoundingClientRect();
+  const radius = rect.width * 0.5;
+  const maxKnobTravel = radius - 28;
+  const rawX = event.clientX - rect.left - radius;
+  const rawY = event.clientY - rect.top - radius;
+  const distance = Math.hypot(rawX, rawY);
+  const scale = distance > maxKnobTravel ? maxKnobTravel / distance : 1;
+  const knobX = rawX * scale;
+  const knobY = rawY * scale;
+  data.x = THREE.MathUtils.clamp(knobX / maxKnobTravel, -1, 1);
+  data.y = THREE.MathUtils.clamp(knobY / maxKnobTravel, -1, 1);
+  data.strength = Math.min(1, distance / maxKnobTravel);
+
+  const knob = stick.querySelector(".touch-stick__knob");
+  if (knob) {
+    knob.style.transform = `translate(calc(-50% + ${knobX}px), calc(-50% + ${knobY}px))`;
+  }
+}
+
+function bindTouchStick(stick, data) {
+  if (!stick) return;
+  stick.addEventListener("pointerdown", (event) => {
+    if (!isTouchControlsActive() || data.pointerId !== null) return;
+    event.preventDefault();
+    data.pointerId = event.pointerId;
+    stick.setPointerCapture(event.pointerId);
+    updateTouchStickFromEvent(stick, data, event);
+  });
+  stick.addEventListener("pointermove", (event) => {
+    if (data.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    updateTouchStickFromEvent(stick, data, event);
+  });
+  const release = (event) => {
+    if (data.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    resetTouchStick(stick, data);
+  };
+  stick.addEventListener("pointerup", release);
+  stick.addEventListener("pointercancel", release);
+}
+
+function bindTouchLookSurface() {
+  if (!touchControls) return;
+  const isReservedControl = (target) => Boolean(target.closest(".touch-stick, .touch-actions"));
+  touchControls.addEventListener("pointerdown", (event) => {
+    if (!isTouchControlsActive() || touchInput.look.pointerId !== null || isReservedControl(event.target)) return;
+    event.preventDefault();
+    touchInput.look.pointerId = event.pointerId;
+    touchInput.look.lastX = event.clientX;
+    touchInput.look.lastY = event.clientY;
+    touchControls.setPointerCapture(event.pointerId);
+  });
+  touchControls.addEventListener("pointermove", (event) => {
+    if (touchInput.look.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    const dx = event.clientX - touchInput.look.lastX;
+    const dy = event.clientY - touchInput.look.lastY;
+    touchInput.look.lastX = event.clientX;
+    touchInput.look.lastY = event.clientY;
+    state.yaw -= dx * 0.004;
+    state.pitch -= dy * 0.0032;
+    state.pitch = Math.max(-1.4, Math.min(1.4, state.pitch));
+  });
+  const release = (event) => {
+    if (touchInput.look.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    touchInput.look.pointerId = null;
+  };
+  touchControls.addEventListener("pointerup", release);
+  touchControls.addEventListener("pointercancel", release);
+}
+
+function jump() {
+  if (!state.joined || state.pauseOpen || !state.isAlive || !state.onGround) return;
+  state.verticalVelocity = state.jumpSpeed;
+  state.onGround = false;
+}
+
+function bindTouchButton(button, onDown, onUp) {
+  if (!button) return;
+  button.addEventListener("pointerdown", (event) => {
+    if (!isTouchControlsActive()) return;
+    event.preventDefault();
+    button.setPointerCapture(event.pointerId);
+    onDown?.(event);
+  });
+  const release = (event) => {
+    event.preventDefault();
+    onUp?.(event);
+  };
+  button.addEventListener("pointerup", release);
+  button.addEventListener("pointercancel", release);
+}
+
+function bindTouchControls() {
+  bindTouchStick(touchMoveStick, touchInput.move);
+  bindTouchLookSurface();
+  bindTouchButton(
+    touchFireBtn,
+    () => {
+      if (!state.joined || state.pauseOpen || !state.isAlive) return;
+      const stats = getWeaponStats();
+      state.isFiring = true;
+      touchFireBtn?.classList.add("is-active");
+      shoot();
+      if (!stats.auto) {
+        state.isFiring = false;
+        touchFireBtn?.classList.remove("is-active");
+      }
+    },
+    () => {
+      state.isFiring = false;
+      touchFireBtn?.classList.remove("is-active");
+    }
+  );
+  bindTouchButton(touchAimBtn, () => {
+    if (!state.joined || state.pauseOpen || !state.isAlive) return;
+    state.isAiming = !state.isAiming;
+    touchAimBtn?.classList.toggle("is-active", state.isAiming);
+  });
+  bindTouchButton(touchJumpBtn, jump);
+  bindTouchButton(touchGrenadeBtn, throwGrenade);
+  bindTouchButton(touchPauseBtn, () => {
+    if (state.joined) togglePauseMenu();
+  });
 }
 
 function onKeydownCaptureForRebind(e) {
@@ -959,15 +1139,18 @@ function setLocalAlive(alive) {
   if (!state.isAlive) {
     state.isFiring = false;
     state.isAiming = false;
+    resetTouchInput();
     sniperScope.classList.add("hidden");
     if (document.pointerLockElement === canvas) {
       document.exitPointerLock();
     }
+    syncTouchControls();
     return;
   }
   state.deathKillerId = null;
   state.deathKillerName = "";
   deathScreen?.classList.add("hidden");
+  syncTouchControls();
 }
 
 function updateRespawnNotice() {
@@ -1372,11 +1555,12 @@ function connect() {
       state.respawnUntil = 0;
       setLocalAlive(msg.alive !== false);
       setPauseMenu(false);
-      if (document.pointerLockElement !== canvas) {
+      if (shouldUsePointerLock() && document.pointerLockElement !== canvas) {
         canvas.requestPointerLock();
       }
       updateHealthHud();
       updateGrenadeHud();
+      syncTouchControls();
       return;
     }
 
@@ -1440,6 +1624,7 @@ function enterGame() {
   updateGrenadeHud();
   updateHealthHud();
   updateRespawnNotice();
+  syncTouchControls();
 }
 
 function setPauseMenu(open) {
@@ -1454,10 +1639,12 @@ function setPauseMenu(open) {
     state.keys.clear();
     state.isFiring = false;
     state.isAiming = false;
+    resetTouchInput();
     if (document.pointerLockElement === canvas) {
       document.exitPointerLock();
     }
   }
+  syncTouchControls();
 }
 
 function togglePauseMenu() {
@@ -1497,6 +1684,10 @@ function updateGrenadeHud() {
     "aria-label",
     has ? `Grenade prête, touche ${gLabel} pour lancer` : "Pas de grenade"
   );
+  if (touchGrenadeBtn) {
+    touchGrenadeBtn.disabled = !has;
+    touchGrenadeBtn.classList.toggle("is-active", has);
+  }
 }
 
 function updateZoomState() {
@@ -1571,6 +1762,7 @@ weaponChoice.addEventListener("click", (event) => {
   const weapon = target.getAttribute("data-weapon");
   state.weapon = weapon;
   state.isAiming = false;
+  touchAimBtn?.classList.remove("is-active");
   setActiveWeaponModel(weapon);
   weaponChoice.querySelectorAll("button").forEach((b) => b.classList.remove("active"));
   target.classList.add("active");
@@ -1584,7 +1776,15 @@ window.addEventListener("resize", () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
+  syncTouchControls();
 });
+
+if (mobileControlsQuery.addEventListener) {
+  mobileControlsQuery.addEventListener("change", syncTouchControls);
+} else if (mobileControlsQuery.addListener) {
+  mobileControlsQuery.addListener(syncTouchControls);
+}
+bindTouchControls();
 
 document.addEventListener("keydown", (e) => {
   if (e.code === keyBindings.pause && state.joined) {
@@ -1601,9 +1801,7 @@ document.addEventListener("keydown", (e) => {
   }
   state.keys.add(e.code);
   if (e.code === keyBindings.jump && state.joined && !state.pauseOpen && state.onGround) {
-    if (!state.isAlive) return;
-    state.verticalVelocity = state.jumpSpeed;
-    state.onGround = false;
+    jump();
   }
 });
 document.addEventListener("keyup", (e) => state.keys.delete(e.code));
@@ -1617,7 +1815,7 @@ document.addEventListener("mousemove", (e) => {
   state.pitch = Math.max(-1.4, Math.min(1.4, state.pitch));
 });
 document.addEventListener("pointerlockchange", () => {
-  if (!state.joined) return;
+  if (!state.joined || !shouldUsePointerLock()) return;
   const lockedOnCanvas = document.pointerLockElement === canvas;
   if (!lockedOnCanvas && !state.pauseOpen && state.isAlive) {
     setPauseMenu(true);
@@ -1625,13 +1823,13 @@ document.addEventListener("pointerlockchange", () => {
 });
 
 canvas.addEventListener("click", () => {
-  if (state.joined && !state.pauseOpen && document.pointerLockElement !== canvas) {
+  if (shouldUsePointerLock() && state.joined && !state.pauseOpen && document.pointerLockElement !== canvas) {
     canvas.requestPointerLock();
   }
 });
 canvas.addEventListener("mousedown", (event) => {
   if (event.button !== 0) return;
-  if (!state.joined || state.pauseOpen || !state.isAlive || document.pointerLockElement !== canvas) return;
+  if (!state.joined || state.pauseOpen || !state.isAlive || !hasGameLookInput()) return;
   const stats = getWeaponStats();
   state.isFiring = true;
   shoot();
@@ -1649,16 +1847,17 @@ canvas.addEventListener("mouseup", (event) => {
 window.addEventListener("blur", () => {
   state.isFiring = false;
   state.isAiming = false;
+  resetTouchInput();
 });
 resumeBtn.addEventListener("click", () => {
   setPauseMenu(false);
-  canvas.requestPointerLock();
+  if (shouldUsePointerLock()) canvas.requestPointerLock();
 });
 
 pauseMenuOverlay.addEventListener("click", (e) => {
   if (e.target !== pauseMenuOverlay) return;
   setPauseMenu(false);
-  canvas.requestPointerLock();
+  if (shouldUsePointerLock()) canvas.requestPointerLock();
 });
 
 function updateMovement(delta) {
@@ -1668,14 +1867,18 @@ function updateMovement(delta) {
   }
   const previousPos = camera.position.clone();
   const kb = keyBindings;
-  const fwd = Number(state.keys.has(kb.forward)) - Number(state.keys.has(kb.back));
-  const right = Number(state.keys.has(kb.right)) - Number(state.keys.has(kb.left));
+  const keyboardFwd = Number(state.keys.has(kb.forward)) - Number(state.keys.has(kb.back));
+  const keyboardRight = Number(state.keys.has(kb.right)) - Number(state.keys.has(kb.left));
+  const touchFwd = -touchInput.move.y;
+  const touchRight = touchInput.move.x;
+  const fwd = THREE.MathUtils.clamp(keyboardFwd + touchFwd, -1, 1);
+  const right = THREE.MathUtils.clamp(keyboardRight + touchRight, -1, 1);
   const dir = new THREE.Vector3();
   camera.getWorldDirection(dir);
   dir.y = 0;
   dir.normalize();
   const side = new THREE.Vector3(-dir.z, 0, dir.x).normalize();
-  const isSprinting = state.keys.has(kb.sprint);
+  const isSprinting = state.keys.has(kb.sprint) || touchInput.move.strength > 0.86;
   const speedMultiplier = isSprinting ? state.sprintMultiplier : 1;
   const currentMoveSpeed = state.moveSpeed * speedMultiplier;
 
@@ -1891,7 +2094,7 @@ function animate() {
     state.isFiring &&
     getWeaponStats().auto &&
     !state.pauseOpen &&
-    document.pointerLockElement === canvas
+    hasGameLookInput()
   ) {
     shoot();
   }
@@ -1947,7 +2150,7 @@ function animateViewModel(delta) {
     !state.pauseOpen &&
     state.isAiming &&
     (state.weapon === "ak47" || state.weapon === "shotgun") &&
-    document.pointerLockElement === canvas;
+    hasGameLookInput();
   const aimTarget = wantsAimView ? 1 : 0;
   aimViewBlend = THREE.MathUtils.lerp(aimViewBlend, aimTarget, 1 - Math.exp(-14 * delta));
 
@@ -1965,7 +2168,7 @@ function animateViewModel(delta) {
     state.joined &&
     state.isAlive &&
     !state.pauseOpen &&
-    state.keys.has(keyBindings.sprint);
+    (state.keys.has(keyBindings.sprint) || touchInput.move.strength > 0.86);
   const sprintFactor = sprinting ? 1.7 : 1;
   const bobMul = 1 - 0.55 * aimViewBlend;
   const bobX = 0.008 * sprintFactor * bobMul;
