@@ -1,9 +1,7 @@
 ﻿import * as THREE from "https://unpkg.com/three@0.164.1/build/three.module.js";
 import {
   BASE_FOV,
-  DEFAULT_KEY_BINDINGS,
   GRENADE_CONFIG,
-  KEY_BINDING_ROWS,
   MAP_HALF_SIZE,
   REMOTE_INTERP_SPEED,
   VIEW_RECOIL_BOB_SUPPRESS_K,
@@ -12,7 +10,6 @@ import {
   WEAPON_STATS
 } from "./js/config.js";
 import {
-  app,
   canvas,
   crosshair,
   damageOverlay,
@@ -21,47 +18,48 @@ import {
   deathScreen,
   hitmarker,
   hud,
-  hudControlsHint,
   hudGrenade,
-  hudGrenadeKey,
   hudHealth,
   hudHealthFill,
   hudRoom,
   hudTeam,
   hudWeapon,
   hudWeaponName,
-  keyBindingsList,
-  keyBindingsReset,
   menu,
   mobileControlsQuery,
   nameInput,
   pauseMenuOverlay,
   playerList,
   respawnNotice,
-  resumeBtn,
   roomsList,
   sniperScope,
   touchAimBtn,
-  touchControls,
-  touchFireBtn,
-  touchFullscreenBtn,
   touchGrenadeBtn,
   touchInput,
-  touchJumpBtn,
-  touchMoveStick,
-  touchPauseBtn,
   weaponChoice
 } from "./js/dom.js";
+import { formatKeyLabel } from "./js/key-bindings.js";
+import { bindKeyboardMouseControls } from "./js/input/keyboard-mouse.js";
+import { cancelKeyRebind, keyBindings, initializeKeyBindingUi, updateHudKeyHints } from "./js/input/keybinding-ui.js";
+import { syncFullscreenButton } from "./js/input/fullscreen.js";
 import {
-  formatKeyLabel,
-  getKeyBindingFromEvent,
-  loadKeyBindings,
-  normalizeKeyBindingValue,
-  saveKeyBindings
-} from "./js/key-bindings.js";
+  bindTouchControls,
+  hasGameLookInput,
+  resetTouchInput,
+  shouldUsePointerLock,
+  syncTouchControls
+} from "./js/input/touch-controls.js";
 import { loadPlayerName, sanitizePlayerName, savePlayerName } from "./js/player-name.js";
+import {
+  applyRemoteTeamStyle,
+  colorFromPlayerId,
+  createPlayerMesh,
+  setRemoteAliveVisual,
+  updateNameTagSprite
+} from "./js/players/appearance.js";
 import { state } from "./js/state.js";
 import { createViewModel } from "./js/weapons.js";
+import { createSceneSetup } from "./js/world/scene.js";
 
 /** 0–1 : transition visée épaule (AK / pompe) vers alignement sous le réticule */
 let aimViewBlend = 0;
@@ -71,120 +69,13 @@ nameInput.addEventListener("input", () => {
   savePlayerName(nameInput.value);
 });
 
-const keyBindings = loadKeyBindings();
-let rebindTarget = null;
-
-function assignKeyBinding(action, newCode) {
-  newCode = normalizeKeyBindingValue(newCode);
-  const old = keyBindings[action];
-  if (old === newCode) return;
-  const conflict = Object.entries(keyBindings).find(([k, v]) => k !== action && v === newCode);
-  if (conflict) keyBindings[conflict[0]] = old;
-  keyBindings[action] = newCode;
-  saveKeyBindings(keyBindings);
+function jump() {
+  if (!state.joined || state.pauseOpen || !state.isAlive || !state.onGround) return;
+  state.verticalVelocity = state.jumpSpeed;
+  state.onGround = false;
 }
 
-function syncKeyBindListeningClass() {
-  if (!keyBindingsList) return;
-  keyBindingsList.querySelectorAll(".key-bind-row__btn").forEach((btn) => {
-    btn.classList.toggle("is-listening", btn.dataset.action === rebindTarget);
-  });
-}
-
-function refreshKeyBindingButtons() {
-  if (!keyBindingsList) return;
-  keyBindingsList.querySelectorAll(".key-bind-row__btn").forEach((btn) => {
-    const id = btn.dataset.action;
-    if (id && keyBindings[id]) btn.textContent = formatKeyLabel(keyBindings[id]);
-  });
-}
-
-function buildKeyBindingsUi() {
-  if (!keyBindingsList) return;
-  keyBindingsList.innerHTML = "";
-  for (const row of KEY_BINDING_ROWS) {
-    const wrap = document.createElement("div");
-    wrap.className = "key-bind-row";
-    const lab = document.createElement("span");
-    lab.className = "key-bind-row__label";
-    lab.textContent = row.label;
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "key-bind-row__btn";
-    btn.dataset.action = row.id;
-    btn.textContent = formatKeyLabel(keyBindings[row.id]);
-    btn.addEventListener("click", () => {
-      rebindTarget = rebindTarget === row.id ? null : row.id;
-      syncKeyBindListeningClass();
-    });
-    wrap.appendChild(lab);
-    wrap.appendChild(btn);
-    keyBindingsList.appendChild(wrap);
-  }
-}
-
-function updateHudKeyHints() {
-  const kb = keyBindings;
-  const move = [kb.forward, kb.left, kb.back, kb.right].map(formatKeyLabel).join(" ");
-  if (hudControlsHint) hudControlsHint.textContent = mobileControlsQuery.matches ? "Joystick + glisser" : `${move} + souris`;
-  if (hudGrenadeKey) hudGrenadeKey.textContent = formatKeyLabel(kb.grenade);
-  updateGrenadeHud();
-}
-
-function shouldUsePointerLock() {
-  return !mobileControlsQuery.matches;
-}
-
-function isTouchControlsActive() {
-  return Boolean(touchControls && !touchControls.classList.contains("hidden"));
-}
-
-function hasGameLookInput() {
-  return document.pointerLockElement === canvas || isTouchControlsActive();
-}
-
-function resetTouchStick(stick, data) {
-  data.pointerId = null;
-  data.x = 0;
-  data.y = 0;
-  data.strength = 0;
-  const knob = stick?.querySelector(".touch-stick__knob");
-  if (knob) knob.style.transform = "translate(-50%, -50%)";
-}
-
-function resetTouchInput() {
-  resetTouchStick(touchMoveStick, touchInput.move);
-  touchInput.look.pointerId = null;
-  touchInput.look.lastX = 0;
-  touchInput.look.lastY = 0;
-  state.isFiring = false;
-  state.primaryFireHeld = false;
-  touchFireBtn?.classList.remove("is-active");
-  touchAimBtn?.classList.toggle("is-active", state.isAiming);
-}
-
-function syncTouchControls() {
-  if (!touchControls) return;
-  const wasTouchControlsActive = isTouchControlsActive();
-  const show = state.joined && state.isAlive && !state.pauseOpen && mobileControlsQuery.matches;
-  touchControls.classList.toggle("hidden", !show);
-  if (!show && wasTouchControlsActive) resetTouchInput();
-  updateHudKeyHints();
-  syncFullscreenButton();
-}
-
-function getFullscreenElement() {
-  return document.fullscreenElement || document.webkitFullscreenElement || null;
-}
-
-function syncFullscreenButton() {
-  if (!touchFullscreenBtn) return;
-  const fullscreenTarget = getFullscreenElement();
-  const isFullscreen = fullscreenTarget === document.documentElement || fullscreenTarget === document.body || fullscreenTarget === app;
-  touchFullscreenBtn.classList.toggle("is-active", isFullscreen);
-  touchFullscreenBtn.setAttribute("aria-label", isFullscreen ? "Quitter le plein écran" : "Plein écran");
-  touchFullscreenBtn.title = isFullscreen ? "Quitter le plein écran" : "Plein écran";
-}
+const { camera, renderer, scene } = createSceneSetup(canvas);
 
 function resizeRendererToViewport() {
   camera.aspect = window.innerWidth / window.innerHeight;
@@ -192,204 +83,9 @@ function resizeRendererToViewport() {
   renderer.setSize(window.innerWidth, window.innerHeight);
 }
 
-async function toggleFullscreenMode() {
-  const fullscreenElement = getFullscreenElement();
-  try {
-    if (fullscreenElement) {
-      const exitFullscreen = document.exitFullscreen || document.webkitExitFullscreen;
-      if (exitFullscreen) await exitFullscreen.call(document);
-    } else {
-      const target = app || document.documentElement;
-      const requestFullscreen = target.requestFullscreen || target.webkitRequestFullscreen;
-      if (requestFullscreen) await requestFullscreen.call(target);
-    }
-  } catch {
-    // Some mobile browsers reject fullscreen outside trusted gestures.
-  } finally {
-    syncFullscreenButton();
-    setTimeout(resizeRendererToViewport, 80);
-  }
-}
-
-function updateTouchStickFromEvent(stick, data, event) {
-  const rect = stick.getBoundingClientRect();
-  const radius = rect.width * 0.5;
-  const maxKnobTravel = radius - 28;
-  const rawX = event.clientX - rect.left - radius;
-  const rawY = event.clientY - rect.top - radius;
-  const distance = Math.hypot(rawX, rawY);
-  const scale = distance > maxKnobTravel ? maxKnobTravel / distance : 1;
-  const knobX = rawX * scale;
-  const knobY = rawY * scale;
-  data.x = THREE.MathUtils.clamp(knobX / maxKnobTravel, -1, 1);
-  data.y = THREE.MathUtils.clamp(knobY / maxKnobTravel, -1, 1);
-  data.strength = Math.min(1, distance / maxKnobTravel);
-
-  const knob = stick.querySelector(".touch-stick__knob");
-  if (knob) {
-    knob.style.transform = `translate(calc(-50% + ${knobX}px), calc(-50% + ${knobY}px))`;
-  }
-}
-
-function bindTouchStick(stick, data) {
-  if (!stick) return;
-  stick.addEventListener("pointerdown", (event) => {
-    if (!isTouchControlsActive() || data.pointerId !== null) return;
-    event.preventDefault();
-    data.pointerId = event.pointerId;
-    stick.setPointerCapture(event.pointerId);
-    updateTouchStickFromEvent(stick, data, event);
-  });
-  stick.addEventListener("pointermove", (event) => {
-    if (data.pointerId !== event.pointerId) return;
-    event.preventDefault();
-    updateTouchStickFromEvent(stick, data, event);
-  });
-  const release = (event) => {
-    if (data.pointerId !== event.pointerId) return;
-    event.preventDefault();
-    resetTouchStick(stick, data);
-  };
-  stick.addEventListener("pointerup", release);
-  stick.addEventListener("pointercancel", release);
-}
-
-function bindTouchLookSurface() {
-  if (!touchControls) return;
-  const isReservedControl = (target) => Boolean(target.closest(".touch-stick, .touch-actions"));
-  touchControls.addEventListener("pointerdown", (event) => {
-    if (!isTouchControlsActive() || touchInput.look.pointerId !== null || isReservedControl(event.target)) return;
-    event.preventDefault();
-    touchInput.look.pointerId = event.pointerId;
-    touchInput.look.lastX = event.clientX;
-    touchInput.look.lastY = event.clientY;
-    touchControls.setPointerCapture(event.pointerId);
-  });
-  touchControls.addEventListener("pointermove", (event) => {
-    if (touchInput.look.pointerId !== event.pointerId) return;
-    event.preventDefault();
-    const dx = event.clientX - touchInput.look.lastX;
-    const dy = event.clientY - touchInput.look.lastY;
-    touchInput.look.lastX = event.clientX;
-    touchInput.look.lastY = event.clientY;
-    state.yaw -= dx * 0.004;
-    state.pitch -= dy * 0.0032;
-    state.pitch = Math.max(-1.4, Math.min(1.4, state.pitch));
-  });
-  const release = (event) => {
-    if (touchInput.look.pointerId !== event.pointerId) return;
-    event.preventDefault();
-    touchInput.look.pointerId = null;
-  };
-  touchControls.addEventListener("pointerup", release);
-  touchControls.addEventListener("pointercancel", release);
-}
-
-function jump() {
-  if (!state.joined || state.pauseOpen || !state.isAlive || !state.onGround) return;
-  state.verticalVelocity = state.jumpSpeed;
-  state.onGround = false;
-}
-
-function bindTouchButton(button, onDown, onUp) {
-  if (!button) return;
-  button.addEventListener("pointerdown", (event) => {
-    if (!isTouchControlsActive()) return;
-    event.preventDefault();
-    button.setPointerCapture(event.pointerId);
-    onDown?.(event);
-  });
-  const release = (event) => {
-    event.preventDefault();
-    onUp?.(event);
-  };
-  button.addEventListener("pointerup", release);
-  button.addEventListener("pointercancel", release);
-}
-
-function bindTouchControls() {
-  bindTouchStick(touchMoveStick, touchInput.move);
-  bindTouchLookSurface();
-  bindTouchButton(
-    touchFireBtn,
-    () => {
-      if (!beginPrimaryFire()) return;
-      touchFireBtn?.classList.add("is-active");
-      if (!getWeaponStats().auto) {
-        touchFireBtn?.classList.remove("is-active");
-      }
-    },
-    () => {
-      endPrimaryFire();
-      touchFireBtn?.classList.remove("is-active");
-    }
-  );
-  bindTouchButton(touchAimBtn, () => {
-    if (!state.joined || state.pauseOpen || !state.isAlive) return;
-    state.isAiming = !state.isAiming;
-    touchAimBtn?.classList.toggle("is-active", state.isAiming);
-  });
-  bindTouchButton(touchJumpBtn, jump);
-  bindTouchButton(touchGrenadeBtn, throwGrenade);
-  bindTouchButton(touchPauseBtn, () => {
-    if (state.joined) togglePauseMenu();
-  });
-  bindTouchButton(touchFullscreenBtn, toggleFullscreenMode);
-}
-
-function onKeydownCaptureForRebind(e) {
-  if (!rebindTarget || !state.pauseOpen) return;
-  e.preventDefault();
-  e.stopImmediatePropagation();
-  if (e.repeat) return;
-  const pressedKey = getKeyBindingFromEvent(e);
-  if (pressedKey === "Escape") {
-    rebindTarget = null;
-    syncKeyBindListeningClass();
-    return;
-  }
-  assignKeyBinding(rebindTarget, pressedKey);
-  rebindTarget = null;
-  syncKeyBindListeningClass();
-  refreshKeyBindingButtons();
-  updateHudKeyHints();
-}
-
-buildKeyBindingsUi();
-if (keyBindingsReset) {
-  keyBindingsReset.addEventListener("click", () => {
-    Object.assign(keyBindings, DEFAULT_KEY_BINDINGS);
-    saveKeyBindings(keyBindings);
-    refreshKeyBindingButtons();
-    updateHudKeyHints();
-    rebindTarget = null;
-    syncKeyBindListeningClass();
-  });
-}
-window.addEventListener("keydown", onKeydownCaptureForRebind, true);
-updateHudKeyHints();
-
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-renderer.setSize(window.innerWidth, window.innerHeight);
-
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x8fd3ff);
-scene.fog = new THREE.Fog(0xaedfff, 55, 180);
-
-const camera = new THREE.PerspectiveCamera(BASE_FOV, window.innerWidth / window.innerHeight, 0.1, 1000);
-camera.position.set(0, state.playerHeight, 0);
-scene.add(camera);
-
 const viewModel = createViewModel();
 camera.add(viewModel);
 setActiveWeaponModel(state.weapon);
-
-const hemi = new THREE.HemisphereLight(0xc7ebff, 0x6a8f4c, 1.25);
-scene.add(hemi);
-const dir = new THREE.DirectionalLight(0xfff3d1, 1.15);
-dir.position.set(18, 30, 14);
-scene.add(dir);
 
 const floor = new THREE.Mesh(
   new THREE.PlaneGeometry(200, 200),
@@ -663,250 +359,7 @@ function updateGrenadePickupVisuals(time) {
   });
 }
 
-const localMaterial = new THREE.MeshStandardMaterial({ color: 0x45e0a8 });
 const remoteMeshes = new Map();
-
-function createPlayerMesh(isLocal = false) {
-  if (isLocal) {
-    const localMesh = new THREE.Mesh(new THREE.CapsuleGeometry(0.35, 1.1, 6, 10), localMaterial);
-    localMesh.position.y = 1.2;
-    return localMesh;
-  }
-
-  const root = new THREE.Group();
-  root.position.y = 0;
-
-  const skinMaterial = new THREE.MeshStandardMaterial({ color: 0xd9ad84, roughness: 0.78, flatShading: true });
-  const shirtMaterial = new THREE.MeshStandardMaterial({ color: 0x4f8cf6, roughness: 0.75, flatShading: true });
-  const pantMaterial = new THREE.MeshStandardMaterial({ color: 0x1e2f4f, roughness: 0.88, flatShading: true });
-  const shoeMaterial = new THREE.MeshStandardMaterial({ color: 0x111317, roughness: 0.95, flatShading: true });
-  const accMaterial = new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.8, flatShading: true });
-  const visorMaterial = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.2, metalness: 0.8, flatShading: true });
-
-  const torsoGroup = new THREE.Group();
-  torsoGroup.position.set(0, 1.44, 0);
-
-  const chest = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.5, 0.3), shirtMaterial);
-  chest.position.y = 0.1;
-  torsoGroup.add(chest);
-
-  const abdomen = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.2, 0.25), shirtMaterial);
-  abdomen.position.y = -0.25;
-  torsoGroup.add(abdomen);
-
-  const belt = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.1, 0.28), accMaterial);
-  belt.position.y = -0.35;
-  torsoGroup.add(belt);
-
-  const backpack = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.5, 0.2), accMaterial);
-  backpack.position.set(0, 0, -0.2);
-  torsoGroup.add(backpack);
-  
-  root.add(torsoGroup);
-
-  const headGroup = new THREE.Group();
-  headGroup.position.set(0, 1.95, 0);
-
-  const head = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.3, 0.3), skinMaterial);
-  headGroup.add(head);
-
-  const helmet = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.15, 0.32), accMaterial);
-  helmet.position.y = 0.12;
-  headGroup.add(helmet);
-
-  const visor = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.1, 0.1), visorMaterial);
-  visor.position.set(0, 0, 0.15);
-  headGroup.add(visor);
-  
-  root.add(headGroup);
-
-  const armGeo = new THREE.BoxGeometry(0.15, 0.45, 0.15);
-  const handGeo = new THREE.BoxGeometry(0.12, 0.15, 0.12);
-  
-  const leftArmGroup = new THREE.Group();
-  leftArmGroup.position.set(-0.35, 1.65, 0);
-  const leftArm = new THREE.Mesh(armGeo, shirtMaterial);
-  leftArm.position.y = -0.225;
-  leftArmGroup.add(leftArm);
-  const leftHand = new THREE.Mesh(handGeo, skinMaterial);
-  leftHand.position.y = -0.525;
-  leftArmGroup.add(leftHand);
-  leftArmGroup.rotation.z = 0.1;
-  root.add(leftArmGroup);
-
-  const rightArmGroup = new THREE.Group();
-  rightArmGroup.position.set(0.35, 1.65, 0);
-  const rightArm = new THREE.Mesh(armGeo, shirtMaterial);
-  rightArm.position.y = -0.225;
-  rightArmGroup.add(rightArm);
-  const rightHand = new THREE.Mesh(handGeo, skinMaterial);
-  rightHand.position.y = -0.525;
-  rightArmGroup.add(rightHand);
-  
-  const gunMaterial = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.7, flatShading: true });
-  const gunBody = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.15, 0.45), gunMaterial);
-  gunBody.position.set(0, -0.525, 0.15);
-  rightArmGroup.add(gunBody);
-  const gunBarrel = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.04, 0.3), gunMaterial);
-  gunBarrel.position.set(0, -0.48, 0.45);
-  rightArmGroup.add(gunBarrel);
-  
-  rightArmGroup.rotation.z = -0.1;
-  root.add(rightArmGroup);
-
-  const legGeo = new THREE.BoxGeometry(0.18, 0.5, 0.18);
-  const leftLegGroup = new THREE.Group();
-  leftLegGroup.position.set(-0.15, 0.9, 0);
-  const leftLeg = new THREE.Mesh(legGeo, pantMaterial);
-  leftLeg.position.y = -0.25;
-  leftLegGroup.add(leftLeg);
-  const leftShoe = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.15, 0.25), shoeMaterial);
-  leftShoe.position.set(0, -0.575, 0.03);
-  leftLegGroup.add(leftShoe);
-  root.add(leftLegGroup);
-
-  const rightLegGroup = new THREE.Group();
-  rightLegGroup.position.set(0.15, 0.9, 0);
-  const rightLeg = new THREE.Mesh(legGeo, pantMaterial);
-  rightLeg.position.y = -0.25;
-  rightLegGroup.add(rightLeg);
-  const rightShoe = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.15, 0.25), shoeMaterial);
-  rightShoe.position.set(0, -0.575, 0.03);
-  rightLegGroup.add(rightShoe);
-  root.add(rightLegGroup);
-
-  const hitbox = new THREE.Mesh(
-    new THREE.CapsuleGeometry(0.35, 1.1, 6, 10),
-    new THREE.MeshBasicMaterial({
-      transparent: true,
-      opacity: 0,
-      depthWrite: false
-    })
-  );
-  hitbox.position.y = 1.2;
-  root.add(hitbox);
-
-  const nameTag = createNameTagSprite("Player");
-  nameTag.position.set(0, 2.45, 0);
-  root.add(nameTag);
-
-  root.userData.hitbox = hitbox;
-  root.userData.nameTag = nameTag;
-  root.userData.materials = { shirtMaterial };
-  root.userData.groundOffset = 0.48;
-  
-  root.userData.parts = {
-    torso: torsoGroup,
-    head: headGroup,
-    leftArm: leftArmGroup,
-    rightArm: rightArmGroup,
-    leftLeg: leftLegGroup,
-    rightLeg: rightLegGroup
-  };
-
-  return root;
-}
-
-function createNameTagSprite(name) {
-  const canvasTag = document.createElement("canvas");
-  canvasTag.width = 512;
-  canvasTag.height = 128;
-  const ctx = canvasTag.getContext("2d");
-  const texture = new THREE.CanvasTexture(canvasTag);
-  texture.minFilter = THREE.LinearFilter;
-  texture.magFilter = THREE.LinearFilter;
-  texture.generateMipmaps = false;
-
-  const spriteMaterial = new THREE.SpriteMaterial({
-    map: texture,
-    transparent: true,
-    depthTest: true,
-    depthWrite: false
-  });
-  const sprite = new THREE.Sprite(spriteMaterial);
-  sprite.scale.set(1.9, 0.46, 1);
-  sprite.renderOrder = 9;
-  sprite.userData = { canvas: canvasTag, ctx, texture, currentName: "", currentColor: "" };
-  updateNameTagSprite(sprite, name, null);
-  return sprite;
-}
-
-function colorFromPlayerId(playerId) {
-  const key = String(playerId || "default");
-  let hash = 0;
-  for (let i = 0; i < key.length; i += 1) {
-    hash = (hash * 31 + key.charCodeAt(i)) >>> 0;
-  }
-  const hue = hash % 360;
-  const color = new THREE.Color();
-  color.setHSL(hue / 360, 0.62, 0.56);
-  return color;
-}
-
-function toRgbaString(color, alpha = 1) {
-  const r = Math.round(THREE.MathUtils.clamp(color.r, 0, 1) * 255);
-  const g = Math.round(THREE.MathUtils.clamp(color.g, 0, 1) * 255);
-  const b = Math.round(THREE.MathUtils.clamp(color.b, 0, 1) * 255);
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-}
-
-function updateNameTagSprite(sprite, name, playerColor) {
-  if (!sprite?.userData?.ctx) return;
-  const safeName = String(name || "Player").slice(0, 20);
-  const bgColor = playerColor || new THREE.Color(0x3d5a85);
-  const bgColorKey = bgColor.getHexString();
-  if (sprite.userData.currentName === safeName && sprite.userData.currentColor === bgColorKey) return;
-
-  sprite.userData.currentName = safeName;
-  sprite.userData.currentColor = bgColorKey;
-
-  const { canvas: canvasTag, ctx, texture } = sprite.userData;
-  ctx.clearRect(0, 0, canvasTag.width, canvasTag.height);
-
-  ctx.fillStyle = toRgbaString(bgColor, 0.88);
-  roundRect(ctx, 10, 18, canvasTag.width - 20, 94, 26);
-  ctx.fill();
-
-  ctx.strokeStyle = "rgba(255,255,255,0.35)";
-  ctx.lineWidth = 4;
-  roundRect(ctx, 10, 18, canvasTag.width - 20, 94, 26);
-  ctx.stroke();
-
-  ctx.font = "700 46px Arial, sans-serif";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillStyle = "#ffffff";
-  ctx.fillText(safeName, canvasTag.width / 2, canvasTag.height / 2 + 1);
-
-  texture.needsUpdate = true;
-}
-
-function roundRect(ctx, x, y, width, height, radius) {
-  const r = Math.max(0, Math.min(radius, width * 0.5, height * 0.5));
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.lineTo(x + width - r, y);
-  ctx.quadraticCurveTo(x + width, y, x + width, y + r);
-  ctx.lineTo(x + width, y + height - r);
-  ctx.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
-  ctx.lineTo(x + r, y + height);
-  ctx.quadraticCurveTo(x, y + height, x, y + height - r);
-  ctx.lineTo(x, y + r);
-  ctx.quadraticCurveTo(x, y, x + r, y);
-  ctx.closePath();
-}
-
-function applyRemoteTeamStyle(root, team, playerId) {
-  const shirtMaterial = root?.userData?.materials?.shirtMaterial;
-  if (!shirtMaterial) return;
-  const playerColor = colorFromPlayerId(playerId);
-  shirtMaterial.color.copy(playerColor);
-}
-
-function setRemoteAliveVisual(root, alive) {
-  if (!root) return;
-  root.visible = alive !== false;
-}
 
 function updateHealthHud() {
   const clampedHealth = THREE.MathUtils.clamp(Math.round(state.health), 0, 100);
@@ -1308,8 +761,7 @@ function enterGame() {
 function setPauseMenu(open) {
   if (!state.joined) return;
   state.pauseOpen = open;
-  rebindTarget = null;
-  syncKeyBindListeningClass();
+  cancelKeyRebind();
   pauseMenuOverlay.classList.toggle("hidden", !open);
   crosshair.classList.toggle("hidden", open);
   sniperScope.classList.add("hidden");
@@ -1463,49 +915,16 @@ if (mobileControlsQuery.addEventListener) {
 } else if (mobileControlsQuery.addListener) {
   mobileControlsQuery.addListener(syncTouchControls);
 }
-bindTouchControls();
-
-document.addEventListener("keydown", (e) => {
-  const pressedKey = getKeyBindingFromEvent(e);
-  if (pressedKey === keyBindings.pause && state.joined) {
-    e.preventDefault();
-    togglePauseMenu();
-    return;
-  }
-  if (pressedKey === keyBindings.grenade) {
-    if (state.joined && !state.pauseOpen && state.isAlive) {
-      e.preventDefault();
-      throwGrenade();
-    }
-    return;
-  }
-  state.keys.add(pressedKey);
-  if (pressedKey === keyBindings.jump && state.joined && !state.pauseOpen && state.onGround) {
-    jump();
-  }
-});
-document.addEventListener("keyup", (e) => state.keys.delete(getKeyBindingFromEvent(e)));
-document.addEventListener("contextmenu", (e) => {
-  if (state.joined) e.preventDefault();
-});
-document.addEventListener("mousemove", (e) => {
-  if (!state.joined || document.pointerLockElement !== canvas) return;
-  state.yaw -= e.movementX * 0.0025;
-  state.pitch -= e.movementY * 0.002;
-  state.pitch = Math.max(-1.4, Math.min(1.4, state.pitch));
-});
-document.addEventListener("pointerlockchange", () => {
-  if (!state.joined || !shouldUsePointerLock()) return;
-  const lockedOnCanvas = document.pointerLockElement === canvas;
-  if (!lockedOnCanvas && !state.pauseOpen && state.isAlive && !state.primaryFireHeld) {
-    setPauseMenu(true);
-  }
-});
-
-canvas.addEventListener("click", () => {
-  if (shouldUsePointerLock() && state.joined && !state.pauseOpen && document.pointerLockElement !== canvas) {
-    canvas.requestPointerLock();
-  }
+initializeKeyBindingUi({ onBindingsChanged: updateGrenadeHud });
+bindTouchControls({
+  beginPrimaryFire,
+  endPrimaryFire,
+  getWeaponStats,
+  jump,
+  resizeRendererToViewport,
+  throwGrenade,
+  togglePauseMenu,
+  updateHudKeyHints
 });
 
 function beginPrimaryFire() {
@@ -1528,36 +947,14 @@ function endPrimaryFireFromMouseEvent(event) {
   endPrimaryFire();
 }
 
-canvas.addEventListener("mousedown", (event) => {
-  if (event.button !== 0) return;
-  beginPrimaryFire();
-});
-canvas.addEventListener("mousedown", (event) => {
-  if (event.button !== 2) return;
-  if (!state.joined || state.pauseOpen || !state.isAlive) return;
-  state.isAiming = true;
-});
-canvas.addEventListener("mouseup", (event) => {
-  if (event.button === 0) endPrimaryFireFromMouseEvent(event);
-  if (event.button === 2) state.isAiming = false;
-});
-document.addEventListener("mouseup", (event) => {
-  if (event.button === 0) endPrimaryFireFromMouseEvent(event);
-});
-window.addEventListener("blur", () => {
-  endPrimaryFire();
-  state.isAiming = false;
-  resetTouchInput();
-});
-resumeBtn.addEventListener("click", () => {
-  setPauseMenu(false);
-  if (shouldUsePointerLock()) canvas.requestPointerLock();
-});
-
-pauseMenuOverlay.addEventListener("click", (e) => {
-  if (e.target !== pauseMenuOverlay) return;
-  setPauseMenu(false);
-  if (shouldUsePointerLock()) canvas.requestPointerLock();
+bindKeyboardMouseControls({
+  beginPrimaryFire,
+  endPrimaryFire,
+  endPrimaryFireFromMouseEvent,
+  jump,
+  setPauseMenu,
+  throwGrenade,
+  togglePauseMenu
 });
 
 function updateMovement(delta) {
