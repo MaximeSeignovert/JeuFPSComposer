@@ -1,290 +1,78 @@
 ﻿import * as THREE from "https://unpkg.com/three@0.164.1/build/three.module.js";
+import {
+  BASE_FOV,
+  DEFAULT_KEY_BINDINGS,
+  GRENADE_CONFIG,
+  KEY_BINDING_ROWS,
+  MAP_HALF_SIZE,
+  REMOTE_INTERP_SPEED,
+  VIEW_RECOIL_BOB_SUPPRESS_K,
+  VIEW_RECOIL_DECAY,
+  VIEW_RECOIL_NORM_CAP,
+  WEAPON_STATS
+} from "./js/config.js";
+import {
+  app,
+  canvas,
+  crosshair,
+  damageOverlay,
+  deathCountdown,
+  deathKillerName,
+  deathScreen,
+  hitmarker,
+  hud,
+  hudControlsHint,
+  hudGrenade,
+  hudGrenadeKey,
+  hudHealth,
+  hudHealthFill,
+  hudRoom,
+  hudTeam,
+  hudWeapon,
+  hudWeaponName,
+  keyBindingsList,
+  keyBindingsReset,
+  menu,
+  mobileControlsQuery,
+  nameInput,
+  pauseMenuOverlay,
+  playerList,
+  respawnNotice,
+  resumeBtn,
+  roomsList,
+  sniperScope,
+  touchAimBtn,
+  touchControls,
+  touchFireBtn,
+  touchFullscreenBtn,
+  touchGrenadeBtn,
+  touchInput,
+  touchJumpBtn,
+  touchMoveStick,
+  touchPauseBtn,
+  weaponChoice
+} from "./js/dom.js";
+import {
+  formatKeyLabel,
+  getKeyBindingFromEvent,
+  loadKeyBindings,
+  normalizeKeyBindingValue,
+  saveKeyBindings
+} from "./js/key-bindings.js";
+import { loadPlayerName, sanitizePlayerName, savePlayerName } from "./js/player-name.js";
+import { state } from "./js/state.js";
+import { createViewModel } from "./js/weapons.js";
 
-const state = {
-  ws: null,
-  playerId: null,
-  roomId: null,
-  team: null,
-  weapon: "ak47",
-  players: new Map(),
-  keys: new Set(),
-  yaw: 0,
-  pitch: 0,
-  moveSpeed: 5,
-  sprintMultiplier: 2,
-  playerHeight: 1.7,
-  gravity: 26,
-  jumpSpeed: 8.8,
-  fireRate: 8,
-  bulletSpeed: 300,
-  bulletLife: 1.1,
-  verticalVelocity: 0,
-  onGround: true,
-  movementBlend: 0,
-  lastShotAt: 0,
-  lastJumpPadBoostAt: 0,
-  isFiring: false,
-  primaryFireHeld: false,
-  isAiming: false,
-  health: 100,
-  isAlive: true,
-  grenadesHeld: 0,
-  respawnUntil: 0,
-  respawnDelayMs: 3200,
-  deathKillerId: null,
-  deathKillerName: "",
-  joined: false,
-  pauseOpen: false,
-  grenadeSequence: 0,
-  lastGrenadePickupAttemptAt: 0,
-  viewRecoilZ: 0,
-  viewRecoilY: 0,
-  viewRecoilRotX: 0,
-  viewRecoilRotZ: 0
-};
-
-const BASE_FOV = 74;
-const PLAYER_NAME_STORAGE_KEY = "fps.playerName";
-const KEY_BINDINGS_STORAGE_KEY = "fps.keyBindings";
-const DEFAULT_KEY_BINDINGS = {
-  forward: "z",
-  back: "s",
-  left: "q",
-  right: "d",
-  sprint: "ShiftLeft",
-  jump: "Space",
-  grenade: "g",
-  pause: "Escape"
-};
-const KEY_BINDING_ROWS = [
-  { id: "forward", label: "Avancer" },
-  { id: "back", label: "Reculer" },
-  { id: "left", label: "Strafe gauche" },
-  { id: "right", label: "Strafe droite" },
-  { id: "sprint", label: "Sprint" },
-  { id: "jump", label: "Sauter" },
-  { id: "grenade", label: "Grenade" },
-  { id: "pause", label: "Pause / menu" }
-];
-const MAP_HALF_SIZE = 40;
-const REMOTE_INTERP_SPEED = 12;
-const VIEW_RECOIL_DECAY = 15;
-const VIEW_RECOIL_BOB_SUPPRESS_K = 0.48;
-const VIEW_RECOIL_NORM_CAP = 0.16;
 /** 0–1 : transition visée épaule (AK / pompe) vers alignement sous le réticule */
 let aimViewBlend = 0;
-const WEAPON_STATS = {
-  shotgun: {
-    label: "Fusil a pompe",
-    fireRate: 1.0,
-    pellets: 12,
-    spreadX: 0.18,
-    spreadY: 0.04,
-    spread: 0.12, // fallback
-    damage: 12,
-    range: 22,
-    bulletSpeed: 120,
-    auto: false,
-    zoomFov: BASE_FOV,
-    viewRecoil: { z: 0.135, y: -0.02, rotX: 0.078, rotZ: 0.05 }
-  },
-  ak47: {
-    label: "AK47",
-    fireRate: 8.2,
-    pellets: 1,
-    spread: 0.017,
-    damage: 20,
-    range: 58,
-    bulletSpeed: 145,
-    auto: true,
-    zoomFov: BASE_FOV,
-    viewRecoil: { z: 0.042, y: -0.006, rotX: 0.032, rotZ: 0.02 }
-  },
-  sniper: {
-    label: "Sniper",
-    fireRate: 0.72,
-    pellets: 1,
-    spread: 0.002,
-    damage: 92,
-    range: 125,
-    bulletSpeed: 210,
-    auto: false,
-    zoomFov: 28,
-    viewRecoil: { z: 0.158, y: -0.014, rotX: 0.068, rotZ: 0.028 }
-  }
-};
-const GRENADE_CONFIG = {
-  pickupRadius: 1.7,
-  radius: 0.18,
-  gravity: 24,
-  throwSpeed: 16,
-  fuseMs: 1600,
-  blastRadius: 8.5,
-  bounceDamping: 0.62,
-  friction: 0.84,
-  minVerticalBounce: 1.4,
-  minHorizontalSpeed: 0.2
-};
-
-const menu = document.getElementById("menu");
-const roomsList = document.getElementById("roomsList");
-const nameInput = document.getElementById("nameInput");
-const weaponChoice = document.getElementById("weaponChoice");
-const pauseMenuOverlay = document.getElementById("pauseMenuOverlay");
-const pauseMenu = document.getElementById("pauseMenu");
-const resumeBtn = document.getElementById("resumeBtn");
-const hud = document.getElementById("hud");
-const crosshair = document.getElementById("crosshair");
-const damageOverlay = document.getElementById("damageOverlay");
-const hitmarker = document.getElementById("hitmarker");
-const sniperScope = document.getElementById("sniperScope");
-const playerList = document.getElementById("playerList");
-const hudRoom = document.getElementById("hudRoom");
-const hudTeam = document.getElementById("hudTeam");
-const hudWeapon = document.getElementById("hudWeapon");
-const hudWeaponName = document.getElementById("hudWeaponName");
-const hudGrenade = document.getElementById("hudGrenade");
-const hudGrenadeKey = document.getElementById("hudGrenadeKey");
-const hudControlsHint = document.getElementById("hudControlsHint");
-const keyBindingsList = document.getElementById("keyBindingsList");
-const keyBindingsReset = document.getElementById("keyBindingsReset");
-const hudHealth = document.getElementById("hudHealth");
-const hudHealthFill = document.getElementById("hudHealthFill");
-const respawnNotice = document.getElementById("respawnNotice");
-const deathScreen = document.getElementById("deathScreen");
-const deathKillerName = document.getElementById("deathKillerName");
-const deathCountdown = document.getElementById("deathCountdown");
-const canvas = document.getElementById("gameCanvas");
-const touchControls = document.getElementById("touchControls");
-const touchMoveStick = document.getElementById("touchMoveStick");
-const touchFireBtn = document.getElementById("touchFireBtn");
-const touchAimBtn = document.getElementById("touchAimBtn");
-const touchJumpBtn = document.getElementById("touchJumpBtn");
-const touchGrenadeBtn = document.getElementById("touchGrenadeBtn");
-const touchPauseBtn = document.getElementById("touchPauseBtn");
-const touchFullscreenBtn = document.getElementById("touchFullscreenBtn");
-const mobileControlsQuery = window.matchMedia("(max-width: 820px), (hover: none), (pointer: coarse)");
-const touchInput = {
-  move: { pointerId: null, x: 0, y: 0, strength: 0 },
-  look: { pointerId: null, lastX: 0, lastY: 0 }
-};
-
-function sanitizePlayerName(rawName) {
-  const cleaned = String(rawName || "").trim().slice(0, 20);
-  return cleaned || "Player";
-}
-
-function savePlayerName(name) {
-  try {
-    localStorage.setItem(PLAYER_NAME_STORAGE_KEY, sanitizePlayerName(name));
-  } catch {
-    // Ignore localStorage failures (private mode / quota)
-  }
-}
-
-function loadPlayerName() {
-  try {
-    return sanitizePlayerName(localStorage.getItem(PLAYER_NAME_STORAGE_KEY) || "Player");
-  } catch {
-    return "Player";
-  }
-}
 
 nameInput.value = loadPlayerName();
 nameInput.addEventListener("input", () => {
   savePlayerName(nameInput.value);
 });
 
-const KEY_LABEL_FR = {
-  Escape: "Échap",
-  Space: "Espace",
-  ShiftLeft: "Maj gauche",
-  ShiftRight: "Maj droite",
-  ControlLeft: "Ctrl gauche",
-  ControlRight: "Ctrl droite",
-  AltLeft: "Alt gauche",
-  AltRight: "Alt droite",
-  Tab: "Tab",
-  Enter: "Entrée",
-  Backspace: "Retour",
-  CapsLock: "Verr. maj",
-  ArrowUp: "↑",
-  ArrowDown: "↓",
-  ArrowLeft: "←",
-  ArrowRight: "→"
-};
-
-const LEGACY_CODE_TO_AZERTY_KEY = {
-  KeyW: "z",
-  KeyA: "q",
-  KeyS: "s",
-  KeyD: "d",
-  KeyG: "g",
-  Digit0: "0",
-  Digit1: "1",
-  Digit2: "2",
-  Digit3: "3",
-  Digit4: "4",
-  Digit5: "5",
-  Digit6: "6",
-  Digit7: "7",
-  Digit8: "8",
-  Digit9: "9"
-};
-
-function normalizeKeyBindingValue(value) {
-  if (!value) return "";
-  if (LEGACY_CODE_TO_AZERTY_KEY[value]) return LEGACY_CODE_TO_AZERTY_KEY[value];
-  if (value === " ") return "Space";
-  if (value.length === 1) return value.toLocaleLowerCase("fr-FR");
-  if (value.startsWith("Key") && value.length === 4) return value.slice(3).toLocaleLowerCase("fr-FR");
-  if (value.startsWith("Digit")) return value.slice(5);
-  return value;
-}
-
-function getKeyBindingFromEvent(event) {
-  if (event.code === "Space" || event.key === " ") return "Space";
-  if (event.key && event.key.length === 1) return event.key.toLocaleLowerCase("fr-FR");
-  return event.code || event.key || "";
-}
-
-function formatKeyLabel(key) {
-  if (!key) return "?";
-  if (KEY_LABEL_FR[key]) return KEY_LABEL_FR[key];
-  if (key.length === 1) return key.toLocaleUpperCase("fr-FR");
-  if (key.startsWith("Numpad")) return "Pav. " + key.slice(6);
-  return key;
-}
-
-function loadKeyBindings() {
-  const merged = { ...DEFAULT_KEY_BINDINGS };
-  try {
-    const raw = localStorage.getItem(KEY_BINDINGS_STORAGE_KEY);
-    if (!raw) return merged;
-    const parsed = JSON.parse(raw);
-    if (typeof parsed !== "object" || !parsed) return merged;
-    for (const id of Object.keys(DEFAULT_KEY_BINDINGS)) {
-      if (typeof parsed[id] === "string" && parsed[id].length) {
-        merged[id] = normalizeKeyBindingValue(parsed[id]);
-      }
-    }
-  } catch {
-    // ignore
-  }
-  return merged;
-}
-
-function saveKeyBindings() {
-  try {
-    localStorage.setItem(KEY_BINDINGS_STORAGE_KEY, JSON.stringify(keyBindings));
-  } catch {
-    // ignore
-  }
-}
-
 const keyBindings = loadKeyBindings();
 let rebindTarget = null;
-const app = document.getElementById("app");
 
 function assignKeyBinding(action, newCode) {
   newCode = normalizeKeyBindingValue(newCode);
@@ -293,7 +81,7 @@ function assignKeyBinding(action, newCode) {
   const conflict = Object.entries(keyBindings).find(([k, v]) => k !== action && v === newCode);
   if (conflict) keyBindings[conflict[0]] = old;
   keyBindings[action] = newCode;
-  saveKeyBindings();
+  saveKeyBindings(keyBindings);
 }
 
 function syncKeyBindListeningClass() {
@@ -377,9 +165,10 @@ function resetTouchInput() {
 
 function syncTouchControls() {
   if (!touchControls) return;
+  const wasTouchControlsActive = isTouchControlsActive();
   const show = state.joined && state.isAlive && !state.pauseOpen && mobileControlsQuery.matches;
   touchControls.classList.toggle("hidden", !show);
-  if (!show) resetTouchInput();
+  if (!show && wasTouchControlsActive) resetTouchInput();
   updateHudKeyHints();
   syncFullscreenButton();
 }
@@ -570,7 +359,7 @@ buildKeyBindingsUi();
 if (keyBindingsReset) {
   keyBindingsReset.addEventListener("click", () => {
     Object.assign(keyBindings, DEFAULT_KEY_BINDINGS);
-    saveKeyBindings();
+    saveKeyBindings(keyBindings);
     refreshKeyBindingButtons();
     updateHudKeyHints();
     rebindTarget = null;
@@ -1317,194 +1106,6 @@ function triggerDamageOverlay(damageAmount = 0) {
   }, 220);
 }
 
-function createViewModel() {
-  const group = new THREE.Group();
-  group.position.set(0.3, -0.31, -0.52);
-  group.rotation.set(-0.14, -0.22, -0.1);
-
-  const armMaterial = new THREE.MeshStandardMaterial({ color: 0xd1a57b, roughness: 0.82 });
-  const sleeveMaterial = new THREE.MeshStandardMaterial({ color: 0x2b3f66, roughness: 0.88 });
-  const metalDark = new THREE.MeshStandardMaterial({ color: 0x2a2a2e, roughness: 0.45, metalness: 0.35 });
-  const metalAccent = new THREE.MeshStandardMaterial({ color: 0x6f6f77, roughness: 0.35, metalness: 0.65 });
-  const woodMaterial = new THREE.MeshStandardMaterial({ color: 0x6f4a2a, roughness: 0.8, metalness: 0.05 });
-  const scopeGlass = new THREE.MeshStandardMaterial({
-    color: 0x4cb7ff,
-    roughness: 0.15,
-    metalness: 0.25,
-    transparent: true,
-    opacity: 0.78
-  });
-
-  const armGroup = new THREE.Group();
-  group.add(armGroup);
-
-  const forearm = new THREE.Mesh(new THREE.CapsuleGeometry(0.085, 0.36, 6, 12), armMaterial);
-  forearm.rotation.z = 0.85;
-  forearm.rotation.x = -0.16;
-  forearm.position.set(-0.12, -0.16, 0.14);
-  armGroup.add(forearm);
-
-  const sleeve = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.11, 0.22, 12), sleeveMaterial);
-  sleeve.rotation.z = 0.9;
-  sleeve.rotation.x = -0.2;
-  sleeve.position.set(-0.18, -0.22, 0.2);
-  armGroup.add(sleeve);
-
-  const ak47 = new THREE.Group();
-  const akReceiver = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.12, 0.45), metalDark);
-  akReceiver.position.set(-0.02, -0.19, -0.27);
-  ak47.add(akReceiver);
-  
-  const akDustCover = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.04, 0.35), metalAccent);
-  akDustCover.position.set(-0.02, -0.11, -0.27);
-  ak47.add(akDustCover);
-
-  const akBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.55, 8), metalAccent);
-  akBarrel.rotation.x = Math.PI / 2;
-  akBarrel.position.set(-0.02, -0.16, -0.75);
-  ak47.add(akBarrel);
-
-  const akGasTube = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, 0.35, 8), metalAccent);
-  akGasTube.rotation.x = Math.PI / 2;
-  akGasTube.position.set(-0.02, -0.12, -0.65);
-  ak47.add(akGasTube);
-
-  const akHandguard = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.08, 0.25), woodMaterial);
-  akHandguard.position.set(-0.02, -0.15, -0.6);
-  ak47.add(akHandguard);
-
-  const akGrip = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.12, 0.05), woodMaterial);
-  akGrip.position.set(-0.02, -0.3, -0.15);
-  akGrip.rotation.x = -0.2;
-  ak47.add(akGrip);
-
-  const akMag = new THREE.Group();
-  const magTop = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.15, 0.08), metalDark);
-  magTop.position.set(0, -0.05, 0);
-  const magBot = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.15, 0.08), metalDark);
-  magBot.position.set(0, -0.18, 0.03);
-  magBot.rotation.x = 0.25;
-  akMag.add(magTop);
-  akMag.add(magBot);
-  akMag.position.set(-0.02, -0.25, -0.35);
-  akMag.rotation.x = 0.1;
-  ak47.add(akMag);
-
-  const akStock = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.11, 0.22), woodMaterial);
-  akStock.position.set(-0.02, -0.22, 0.05);
-  akStock.rotation.x = -0.15;
-  ak47.add(akStock);
-
-  const akFrontSight = new THREE.Mesh(new THREE.BoxGeometry(0.015, 0.05, 0.02), metalDark);
-  akFrontSight.position.set(-0.02, -0.13, -0.98);
-  ak47.add(akFrontSight);
-  
-  const akRearSight = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.03, 0.03), metalDark);
-  akRearSight.position.set(-0.02, -0.08, -0.4);
-  ak47.add(akRearSight);
-
-  const shotgun = new THREE.Group();
-  shotgun.position.set(-0.015, -0.005, 0.01);
-  
-  const sgBody = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.14, 0.4), metalDark);
-  sgBody.position.set(-0.02, -0.18, -0.25);
-  shotgun.add(sgBody);
-
-  const sgBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.7, 8), metalAccent);
-  sgBarrel.rotation.x = Math.PI / 2;
-  sgBarrel.position.set(-0.02, -0.14, -0.75);
-  shotgun.add(sgBarrel);
-  
-  const sgTube = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.65, 8), metalDark);
-  sgTube.rotation.x = Math.PI / 2;
-  sgTube.position.set(-0.02, -0.18, -0.72);
-  shotgun.add(sgTube);
-
-  const sgPump = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.07, 0.2), woodMaterial);
-  sgPump.position.set(-0.02, -0.18, -0.65);
-  shotgun.add(sgPump);
-
-  const sgStock = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.12, 0.25), woodMaterial);
-  sgStock.position.set(-0.02, -0.22, 0.05);
-  sgStock.rotation.x = -0.15;
-  shotgun.add(sgStock);
-  
-  const sgGrip = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.14, 0.06), woodMaterial);
-  sgGrip.position.set(-0.02, -0.26, -0.12);
-  sgGrip.rotation.x = -0.3;
-  shotgun.add(sgGrip);
-
-  const sniper = new THREE.Group();
-  sniper.position.set(0.005, -0.01, 0.015);
-  
-  const snBody = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.12, 0.5), woodMaterial);
-  snBody.position.set(-0.02, -0.18, -0.35);
-  sniper.add(snBody);
-  
-  const snAction = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.06, 0.3), metalDark);
-  snAction.position.set(-0.02, -0.12, -0.35);
-  sniper.add(snAction);
-
-  const snBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.8, 8), metalAccent);
-  snBarrel.rotation.x = Math.PI / 2;
-  snBarrel.position.set(-0.02, -0.14, -0.85);
-  sniper.add(snBarrel);
-  
-  const snMuzzle = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.1, 8), metalDark);
-  snMuzzle.rotation.x = Math.PI / 2;
-  snMuzzle.position.set(-0.02, -0.14, -1.25);
-  sniper.add(snMuzzle);
-
-  const snScope = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.35, 12), metalDark);
-  snScope.rotation.x = Math.PI / 2;
-  snScope.position.set(-0.02, -0.04, -0.35);
-  sniper.add(snScope);
-  
-  const snScopeMount1 = new THREE.Mesh(new THREE.BoxGeometry(0.015, 0.04, 0.02), metalDark);
-  snScopeMount1.position.set(-0.02, -0.07, -0.25);
-  sniper.add(snScopeMount1);
-  const snScopeMount2 = new THREE.Mesh(new THREE.BoxGeometry(0.015, 0.04, 0.02), metalDark);
-  snScopeMount2.position.set(-0.02, -0.07, -0.45);
-  sniper.add(snScopeMount2);
-
-  const snScopeLens = new THREE.Mesh(new THREE.CircleGeometry(0.025, 12), scopeGlass);
-  snScopeLens.position.set(-0.02, -0.04, -0.17);
-  sniper.add(snScopeLens);
-
-  const snStock = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.12, 0.3), woodMaterial);
-  snStock.position.set(-0.02, -0.2, -0.05);
-  snStock.rotation.x = -0.1;
-  sniper.add(snStock);
-  
-  const snCheek = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.04, 0.12), metalDark);
-  snCheek.position.set(-0.02, -0.13, -0.1);
-  sniper.add(snCheek);
-
-  group.add(ak47);
-  group.add(shotgun);
-  group.add(sniper);
-
-  const muzzleAk = new THREE.Object3D();
-  muzzleAk.position.set(-0.02, -0.16, -1.05);
-  ak47.add(muzzleAk);
-
-  const muzzleShotgun = new THREE.Object3D();
-  muzzleShotgun.position.set(-0.03, -0.14, -1.1);
-  shotgun.add(muzzleShotgun);
-
-  const muzzleSniper = new THREE.Object3D();
-  muzzleSniper.position.set(-0.015, -0.14, -1.3);
-  sniper.add(muzzleSniper);
-
-  group.userData.weaponModels = { ak47, shotgun, sniper };
-  group.userData.muzzles = { ak47: muzzleAk, shotgun: muzzleShotgun, sniper: muzzleSniper };
-  group.userData.armGroup = armGroup;
-  group.userData.activeMuzzle = muzzleAk;
-  group.userData.activeWeapon = "ak47";
-
-  return group;
-}
-
 function setActiveWeaponModel(weapon) {
   const weaponModels = viewModel?.userData?.weaponModels;
   const muzzles = viewModel?.userData?.muzzles;
@@ -1896,7 +1497,7 @@ document.addEventListener("mousemove", (e) => {
 document.addEventListener("pointerlockchange", () => {
   if (!state.joined || !shouldUsePointerLock()) return;
   const lockedOnCanvas = document.pointerLockElement === canvas;
-  if (!lockedOnCanvas && !state.pauseOpen && state.isAlive) {
+  if (!lockedOnCanvas && !state.pauseOpen && state.isAlive && !state.primaryFireHeld) {
     setPauseMenu(true);
   }
 });
@@ -1922,6 +1523,11 @@ function endPrimaryFire() {
   state.isFiring = false;
 }
 
+function endPrimaryFireFromMouseEvent(event) {
+  if (event.buttons !== undefined && (event.buttons & 1) !== 0) return;
+  endPrimaryFire();
+}
+
 canvas.addEventListener("mousedown", (event) => {
   if (event.button !== 0) return;
   beginPrimaryFire();
@@ -1932,11 +1538,11 @@ canvas.addEventListener("mousedown", (event) => {
   state.isAiming = true;
 });
 canvas.addEventListener("mouseup", (event) => {
-  if (event.button === 0) endPrimaryFire();
+  if (event.button === 0) endPrimaryFireFromMouseEvent(event);
   if (event.button === 2) state.isAiming = false;
 });
 document.addEventListener("mouseup", (event) => {
-  if (event.button === 0) endPrimaryFire();
+  if (event.button === 0) endPrimaryFireFromMouseEvent(event);
 });
 window.addEventListener("blur", () => {
   endPrimaryFire();
@@ -2185,10 +1791,10 @@ function animate() {
   camera.rotation.set(state.pitch, state.yaw, 0, "YXZ");
   updateMovement(delta);
   if (
-    (state.isFiring || state.primaryFireHeld) &&
+    state.primaryFireHeld &&
     getWeaponStats().auto &&
     !state.pauseOpen &&
-    hasGameLookInput()
+    state.isAlive
   ) {
     state.isFiring = true;
     shoot();
