@@ -46,13 +46,13 @@ const BASE_FOV = 74;
 const PLAYER_NAME_STORAGE_KEY = "fps.playerName";
 const KEY_BINDINGS_STORAGE_KEY = "fps.keyBindings";
 const DEFAULT_KEY_BINDINGS = {
-  forward: "KeyW",
-  back: "KeyS",
-  left: "KeyA",
-  right: "KeyD",
+  forward: "z",
+  back: "s",
+  left: "q",
+  right: "d",
   sprint: "ShiftLeft",
   jump: "Space",
-  grenade: "KeyG",
+  grenade: "g",
   pause: "Escape"
 };
 const KEY_BINDING_ROWS = [
@@ -212,13 +212,46 @@ const KEY_LABEL_FR = {
   ArrowRight: "→"
 };
 
-function formatKeyLabel(code) {
-  if (!code) return "?";
-  if (KEY_LABEL_FR[code]) return KEY_LABEL_FR[code];
-  if (code.startsWith("Key") && code.length === 4) return code.slice(3);
-  if (code.startsWith("Digit")) return code.slice(5);
-  if (code.startsWith("Numpad")) return "Pav. " + code.slice(6);
-  return code;
+const LEGACY_CODE_TO_AZERTY_KEY = {
+  KeyW: "z",
+  KeyA: "q",
+  KeyS: "s",
+  KeyD: "d",
+  KeyG: "g",
+  Digit0: "0",
+  Digit1: "1",
+  Digit2: "2",
+  Digit3: "3",
+  Digit4: "4",
+  Digit5: "5",
+  Digit6: "6",
+  Digit7: "7",
+  Digit8: "8",
+  Digit9: "9"
+};
+
+function normalizeKeyBindingValue(value) {
+  if (!value) return "";
+  if (LEGACY_CODE_TO_AZERTY_KEY[value]) return LEGACY_CODE_TO_AZERTY_KEY[value];
+  if (value === " ") return "Space";
+  if (value.length === 1) return value.toLocaleLowerCase("fr-FR");
+  if (value.startsWith("Key") && value.length === 4) return value.slice(3).toLocaleLowerCase("fr-FR");
+  if (value.startsWith("Digit")) return value.slice(5);
+  return value;
+}
+
+function getKeyBindingFromEvent(event) {
+  if (event.code === "Space" || event.key === " ") return "Space";
+  if (event.key && event.key.length === 1) return event.key.toLocaleLowerCase("fr-FR");
+  return event.code || event.key || "";
+}
+
+function formatKeyLabel(key) {
+  if (!key) return "?";
+  if (KEY_LABEL_FR[key]) return KEY_LABEL_FR[key];
+  if (key.length === 1) return key.toLocaleUpperCase("fr-FR");
+  if (key.startsWith("Numpad")) return "Pav. " + key.slice(6);
+  return key;
 }
 
 function loadKeyBindings() {
@@ -229,7 +262,9 @@ function loadKeyBindings() {
     const parsed = JSON.parse(raw);
     if (typeof parsed !== "object" || !parsed) return merged;
     for (const id of Object.keys(DEFAULT_KEY_BINDINGS)) {
-      if (typeof parsed[id] === "string" && parsed[id].length) merged[id] = parsed[id];
+      if (typeof parsed[id] === "string" && parsed[id].length) {
+        merged[id] = normalizeKeyBindingValue(parsed[id]);
+      }
     }
   } catch {
     // ignore
@@ -249,6 +284,7 @@ const keyBindings = loadKeyBindings();
 let rebindTarget = null;
 
 function assignKeyBinding(action, newCode) {
+  newCode = normalizeKeyBindingValue(newCode);
   const old = keyBindings[action];
   if (old === newCode) return;
   const conflict = Object.entries(keyBindings).find(([k, v]) => k !== action && v === newCode);
@@ -477,12 +513,13 @@ function onKeydownCaptureForRebind(e) {
   e.preventDefault();
   e.stopImmediatePropagation();
   if (e.repeat) return;
-  if (e.code === "Escape") {
+  const pressedKey = getKeyBindingFromEvent(e);
+  if (pressedKey === "Escape") {
     rebindTarget = null;
     syncKeyBindListeningClass();
     return;
   }
-  assignKeyBinding(rebindTarget, e.code);
+  assignKeyBinding(rebindTarget, pressedKey);
   rebindTarget = null;
   syncKeyBindListeningClass();
   refreshKeyBindingButtons();
@@ -1787,24 +1824,25 @@ if (mobileControlsQuery.addEventListener) {
 bindTouchControls();
 
 document.addEventListener("keydown", (e) => {
-  if (e.code === keyBindings.pause && state.joined) {
+  const pressedKey = getKeyBindingFromEvent(e);
+  if (pressedKey === keyBindings.pause && state.joined) {
     e.preventDefault();
     togglePauseMenu();
     return;
   }
-  if (e.code === keyBindings.grenade) {
+  if (pressedKey === keyBindings.grenade) {
     if (state.joined && !state.pauseOpen && state.isAlive) {
       e.preventDefault();
       throwGrenade();
     }
     return;
   }
-  state.keys.add(e.code);
-  if (e.code === keyBindings.jump && state.joined && !state.pauseOpen && state.onGround) {
+  state.keys.add(pressedKey);
+  if (pressedKey === keyBindings.jump && state.joined && !state.pauseOpen && state.onGround) {
     jump();
   }
 });
-document.addEventListener("keyup", (e) => state.keys.delete(e.code));
+document.addEventListener("keyup", (e) => state.keys.delete(getKeyBindingFromEvent(e)));
 document.addEventListener("contextmenu", (e) => {
   if (state.joined) e.preventDefault();
 });
