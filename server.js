@@ -31,6 +31,13 @@ const GRENADE_BLAST_RADIUS = 8.5;
 const GRENADE_MAX_DAMAGE = 95;
 const GRENADE_PICKUP_RESPAWN_MS = 12000;
 const GRENADE_PICKUP_RADIUS = 2.2;
+const KNIFE_HIT_RANGE = 2.8;
+const WEAPON_DAMAGE_LIMITS = {
+  shotgun: 12,
+  sniper: 92,
+  ak47: 20,
+  knife: 100
+};
 const PLAYER_CENTER_HEIGHT = 1.05;
 const GRENADE_PICKUP_POINTS = [
   { id: "grenade-west", position: { x: -18, y: 0, z: 18 } },
@@ -493,7 +500,7 @@ wss.on("connection", (ws) => {
     }
 
     if (msg.type === "weapon:select") {
-      const allowed = new Set(["shotgun", "sniper", "ak47"]);
+      const allowed = new Set(["shotgun", "sniper", "ak47", "knife"]);
       if (allowed.has(msg.weapon)) ws.meta.weapon = msg.weapon;
       if (ws.meta.roomId) {
         sendRoomPlayers(ws.meta.roomId);
@@ -681,11 +688,20 @@ wss.on("connection", (ws) => {
       const targetId = String(msg.targetId || "");
       const rawDamage = Number(msg.damage);
       if (!targetId || !Number.isFinite(rawDamage)) return;
-      const damage = Math.max(1, Math.min(200, rawDamage));
+      const maxWeaponDamage = WEAPON_DAMAGE_LIMITS[ws.meta.weapon] || WEAPON_DAMAGE_LIMITS.ak47;
+      const damage = Math.max(1, Math.min(maxWeaponDamage, rawDamage));
       const targetWs = room.players.get(targetId);
+      const isKnifeHit = ws.meta.weapon === "knife";
 
       if (targetWs?.meta?.alive) {
         if (Date.now() < (targetWs.meta.invulnerableUntil || 0)) return;
+        if (
+          isKnifeHit &&
+          distance2DSquared(ws.meta.lastPosition, targetWs.meta.lastPosition) >
+            KNIFE_HIT_RANGE * KNIFE_HIT_RANGE
+        ) {
+          return;
+        }
 
         targetWs.meta.health = Math.max(0, targetWs.meta.health - damage);
         if (targetWs.readyState === WebSocket.OPEN) {
@@ -711,6 +727,13 @@ wss.on("connection", (ws) => {
         targetId === room.devBot.id &&
         room.devBot.alive
       ) {
+        if (
+          isKnifeHit &&
+          distance2DSquared(ws.meta.lastPosition, room.devBot.position) >
+            KNIFE_HIT_RANGE * KNIFE_HIT_RANGE
+        ) {
+          return;
+        }
         room.devBot.health = Math.max(0, room.devBot.health - damage);
         if (room.devBot.health > 0) {
           sendRoomPlayers(room.id);

@@ -3,7 +3,7 @@
 FPS 1ere personne avec:
 - lobby de rooms (affichage `x/10`)
 - matchmaking 5v5 (2 equipes de 5)
-- choix d'arme: `Fusil a pompe`, `Sniper`, `AK47`
+- choix d'arme: `Fusil a pompe`, `Sniper`, `AK47`, `Couteau`
 - rendu Three.js
 - backend WebSocket pour synchronisation
 
@@ -33,5 +33,6 @@ Le fichier `railway.json` est deja configure avec healthcheck `/health`.
 - Saut: `Espace`.
 - Tir: `Clic gauche`.
 - Maintenir clic gauche: tir continu.
+- Couteau: attaque au corps a corps de tres pres, one-shot.
 - Effets de tir: flash de bouche, trajectoire de balle, impact visuel.
 - Le jeu est un prototype multijoueur de base (lobby + synchro positions) pret a etendre (tir, degats, score, respawn).

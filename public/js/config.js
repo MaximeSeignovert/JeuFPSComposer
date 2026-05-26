@@ -68,6 +68,19 @@ export const WEAPON_STATS = {
     auto: false,
     zoomFov: 28,
     viewRecoil: { z: 0.158, y: -0.014, rotX: 0.068, rotZ: 0.028 }
+  },
+  knife: {
+    label: "Couteau",
+    fireRate: 1.35,
+    pellets: 1,
+    spread: 0,
+    damage: 100,
+    range: 2.15,
+    bulletSpeed: 0,
+    auto: false,
+    melee: true,
+    zoomFov: BASE_FOV,
+    viewRecoil: { z: 0.09, y: -0.018, rotX: 0.12, rotZ: 0.08 }
   }
 };
 

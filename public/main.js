@@ -60,6 +60,8 @@ import { createSceneSetup } from "./js/world/scene.js";
 
 /** 0–1 : transition visée épaule (AK / pompe) vers alignement sous le réticule */
 let aimViewBlend = 0;
+const KNIFE_ATTACK_DURATION = 0.34;
+let knifeAttackTime = 0;
 
 nameInput.value = loadPlayerName();
 nameInput.addEventListener("input", () => {
@@ -688,9 +690,18 @@ function connect() {
     if (msg.type === "player:shoot") {
       if (!msg.id || msg.id === state.playerId) return;
       if (!msg.origin || !Array.isArray(msg.shots)) return;
+      if (msg.weapon === "knife") {
+        const slashDirection = msg.shots.find((shot) => shot?.direction)?.direction;
+        spawnKnifeSlash(msg.origin, slashDirection, false);
+        return;
+      }
       spawnMuzzleFlash(msg.origin);
       msg.shots.forEach((shot) => {
         if (!shot?.direction) return;
+        if (shot.melee) {
+          spawnKnifeSlash(msg.origin, shot.direction, false);
+          return;
+        }
         const range = Number(shot.range) || 80;
         const bulletSpeed = Number(shot.bulletSpeed) || 68;
         const impact = traceImpact(msg.origin, shot.direction, range, false, 0);
@@ -1211,6 +1222,7 @@ function impulseViewRecoilFromWeapon(stats) {
 }
 
 function animateViewModel(delta) {
+  knifeAttackTime = Math.max(0, knifeAttackTime - delta);
   const decay = Math.exp(-VIEW_RECOIL_DECAY * delta);
   state.viewRecoilZ *= decay;
   state.viewRecoilY *= decay;
@@ -1262,6 +1274,65 @@ function animateViewModel(delta) {
     viewModel.userData.armGroup.visible = aimViewBlend < 0.8;
   }
 
+  const isKnife = state.weapon === "knife";
+  if (isKnife) {
+    const p = knifeAttackTime > 0 ? 1 - knifeAttackTime / KNIFE_ATTACK_DURATION : 1;
+    const slashP = THREE.MathUtils.clamp(p / 0.72, 0, 1);
+    const recoverP = THREE.MathUtils.clamp((p - 0.72) / 0.28, 0, 1);
+    const slashEase = 1 - Math.pow(1 - slashP, 3);
+    const recoverEase = recoverP * recoverP * (3 - 2 * recoverP);
+    const airY = state.onGround ? 0 : -0.03;
+    const start = {
+      x: 0.48,
+      y: -0.12,
+      z: -0.49,
+      rx: -0.24,
+      ry: -0.25,
+      rz: -0.72
+    };
+    const end = {
+      x: 0.1,
+      y: -0.42,
+      z: -0.54,
+      rx: 0.2,
+      ry: 0.22,
+      rz: 0.82
+    };
+    const rest = {
+      x: 0.34 + s95 * bobX * bobIntensity,
+      y: -0.25 + c75 * bobY * bobIntensity + airY,
+      z: -0.49 + s15 * 0.004 * bobIntensity,
+      rx: -0.1 + c8 * bobRotX * bobIntensity,
+      ry: -0.16 + s67 * bobRotY * bobIntensity,
+      rz: -0.18 + s85 * bobRotZ * bobIntensity
+    };
+
+    const cut = {
+      x: THREE.MathUtils.lerp(start.x, end.x, slashEase),
+      y: THREE.MathUtils.lerp(start.y, end.y, slashEase) + airY,
+      z: THREE.MathUtils.lerp(start.z, end.z, slashEase),
+      rx: THREE.MathUtils.lerp(start.rx, end.rx, slashEase),
+      ry: THREE.MathUtils.lerp(start.ry, end.ry, slashEase),
+      rz: THREE.MathUtils.lerp(start.rz, end.rz, slashEase)
+    };
+
+    const active = knifeAttackTime > 0;
+    const pose = active
+      ? {
+          x: THREE.MathUtils.lerp(cut.x, rest.x, recoverEase),
+          y: THREE.MathUtils.lerp(cut.y, rest.y, recoverEase),
+          z: THREE.MathUtils.lerp(cut.z, rest.z, recoverEase),
+          rx: THREE.MathUtils.lerp(cut.rx, rest.rx, recoverEase),
+          ry: THREE.MathUtils.lerp(cut.ry, rest.ry, recoverEase),
+          rz: THREE.MathUtils.lerp(cut.rz, rest.rz, recoverEase)
+        }
+      : rest;
+
+    viewModel.position.set(pose.x, pose.y, pose.z);
+    viewModel.rotation.set(pose.rx, pose.ry, pose.rz);
+    return;
+  }
+
   const isAk = state.weapon === "ak47";
   const isShotgun = state.weapon === "shotgun";
   const rotXTarget = isAk ? 0.085 : 0.024;
@@ -1301,7 +1372,6 @@ function shoot() {
   const msBetweenShots = 1000 / stats.fireRate;
   if (now - state.lastShotAt < msBetweenShots) return;
   state.lastShotAt = now;
-  impulseViewRecoilFromWeapon(stats);
 
   const muzzle = viewModel.userData.activeMuzzle || viewModel.userData.muzzle;
   const spawnPos = new THREE.Vector3();
@@ -1310,6 +1380,34 @@ function shoot() {
   const aimOrigin = { x: camera.position.x, y: camera.position.y, z: camera.position.z };
   const baseDirection = new THREE.Vector3();
   camera.getWorldDirection(baseDirection).normalize();
+
+  if (stats.melee) {
+    const direction = { x: baseDirection.x, y: baseDirection.y, z: baseDirection.z };
+    knifeAttackTime = KNIFE_ATTACK_DURATION;
+    traceImpact(aimOrigin, direction, stats.range, true, stats.damage);
+    spawnKnifeSlash(muzzleOrigin, direction, true);
+    if (state.ws && state.ws.readyState === WebSocket.OPEN) {
+      state.ws.send(
+        JSON.stringify({
+          type: "player:shoot",
+          origin: muzzleOrigin,
+          weapon: state.weapon,
+          shots: [
+            {
+              direction,
+              damage: stats.damage,
+              range: stats.range,
+              bulletSpeed: 0,
+              melee: true
+            }
+          ]
+        })
+      );
+    }
+    return;
+  }
+
+  impulseViewRecoilFromWeapon(stats);
 
   const right = new THREE.Vector3().crossVectors(camera.up, baseDirection).normalize();
   const up = new THREE.Vector3().crossVectors(baseDirection, right).normalize();
@@ -1713,6 +1811,47 @@ function spawnMuzzleFlash(position) {
   flashes.push({ mesh: flash, life: 0.06 });
 }
 
+function spawnKnifeSlash(origin, direction, localShot = false) {
+  if (!origin) return;
+  const slashDir = new THREE.Vector3(
+    Number(direction?.x) || 0,
+    Number(direction?.y) || 0,
+    Number(direction?.z) || -1
+  );
+  if (slashDir.lengthSq() <= 0.0001) slashDir.set(0, 0, -1);
+  slashDir.normalize();
+
+  const slashRadius = localShot ? 0.32 : 0.28;
+  const slash = new THREE.Group();
+  const arcMaterial = new THREE.MeshBasicMaterial({
+    color: localShot ? 0xf8fbff : 0xffd6d6,
+    transparent: true,
+    opacity: localShot ? 0.66 : 0.48,
+    side: THREE.DoubleSide
+  });
+  const mainArc = new THREE.Mesh(
+    new THREE.RingGeometry(slashRadius, slashRadius + 0.045, 32, 1, -0.1, 1.75),
+    arcMaterial
+  );
+  const innerArc = new THREE.Mesh(
+    new THREE.RingGeometry(slashRadius * 0.74, slashRadius * 0.76, 24, 1, 0.1, 1.35),
+    arcMaterial.clone()
+  );
+  innerArc.material.opacity *= 0.55;
+  slash.add(mainArc);
+  slash.add(innerArc);
+  slash.position.set(origin.x, origin.y, origin.z);
+  slash.position.addScaledVector(slashDir, localShot ? 0.08 : 0.04);
+  slash.lookAt(
+    slash.position.x + slashDir.x,
+    slash.position.y + slashDir.y,
+    slash.position.z + slashDir.z
+  );
+  slash.rotateZ(localShot ? -2.3 : -2.1);
+  scene.add(slash);
+  flashes.push({ mesh: slash, life: 0.16, maxLife: 0.16 });
+}
+
 function traceImpact(origin, direction, maxDistance = 120, reportHit = false, damage = 0) {
   const rayOrigin = new THREE.Vector3(origin.x, origin.y, origin.z);
   const rayDir = new THREE.Vector3(direction.x, direction.y, direction.z).normalize();
@@ -1783,11 +1922,17 @@ function updateFlashes(delta) {
   for (let i = flashes.length - 1; i >= 0; i -= 1) {
     const flash = flashes[i];
     flash.life -= delta;
-    flash.mesh.material.opacity = Math.max(0, flash.life / 0.06);
+    const maxLife = flash.maxLife || 0.06;
+    const opacity = Math.max(0, flash.life / maxLife);
+    flash.mesh.traverse((child) => {
+      if (child.material) child.material.opacity = opacity;
+    });
     if (flash.life <= 0) {
       scene.remove(flash.mesh);
-      flash.mesh.geometry.dispose();
-      flash.mesh.material.dispose();
+      flash.mesh.traverse((child) => {
+        if (child.geometry) child.geometry.dispose();
+        if (child.material) child.material.dispose();
+      });
       flashes.splice(i, 1);
     }
   }

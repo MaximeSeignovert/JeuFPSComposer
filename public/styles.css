@@ -437,6 +437,10 @@ button.active {
   filter: drop-shadow(0 0 10px rgba(201, 168, 255, 0.5));
 }
 
+.hud-weapon--knife .hud-weapon__svg.is-active {
+  filter: drop-shadow(0 0 10px rgba(232, 236, 240, 0.5));
+}
+
 .hud-weapon--ak47 {
   border-color: rgba(106, 176, 255, 0.42);
   background: linear-gradient(
@@ -474,6 +478,19 @@ button.active {
 
 .hud-weapon--sniper .hud-weapon__svg.is-active {
   color: #dcc4ff;
+}
+
+.hud-weapon--knife {
+  border-color: rgba(232, 236, 240, 0.42);
+  background: linear-gradient(
+    135deg,
+    rgba(232, 236, 240, 0.1) 0%,
+    rgba(8, 12, 22, 0.78) 55%
+  );
+}
+
+.hud-weapon--knife .hud-weapon__svg.is-active {
+  color: #eef3f8;
 }
 
 .hud-weapon__meta {
@@ -539,9 +556,14 @@ button.active {
   opacity: 0.55;
 }
 
+.hud-wp-blade {
+  fill: currentColor;
+  opacity: 0.96;
+}
+
 .weapon-choice {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
   gap: 10px;
 }
 

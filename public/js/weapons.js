@@ -10,6 +10,8 @@ export function createViewModel() {
   const metalDark = new THREE.MeshStandardMaterial({ color: 0x2a2a2e, roughness: 0.45, metalness: 0.35 });
   const metalAccent = new THREE.MeshStandardMaterial({ color: 0x6f6f77, roughness: 0.35, metalness: 0.65 });
   const woodMaterial = new THREE.MeshStandardMaterial({ color: 0x6f4a2a, roughness: 0.8, metalness: 0.05 });
+  const bladeMaterial = new THREE.MeshStandardMaterial({ color: 0xd8dde4, roughness: 0.24, metalness: 0.72 });
+  const gripMaterial = new THREE.MeshStandardMaterial({ color: 0x1f2430, roughness: 0.78, metalness: 0.12 });
   const scopeGlass = new THREE.MeshStandardMaterial({
     color: 0x4cb7ff,
     roughness: 0.15,
@@ -163,9 +165,39 @@ export function createViewModel() {
   snCheek.position.set(-0.02, -0.13, -0.1);
   sniper.add(snCheek);
 
+  const knife = new THREE.Group();
+  knife.position.set(-0.13, -0.15, 0.015);
+  knife.rotation.set(1.18, 0.05, -0.08);
+
+  const knifeGrip = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.105, 0.24), gripMaterial);
+  knifeGrip.position.set(-0.015, -0.19, -0.12);
+  knife.add(knifeGrip);
+
+  const gripGroove1 = new THREE.Mesh(new THREE.BoxGeometry(0.079, 0.108, 0.012), metalDark);
+  gripGroove1.position.set(-0.015, -0.19, -0.06);
+  knife.add(gripGroove1);
+
+  const gripGroove2 = new THREE.Mesh(new THREE.BoxGeometry(0.079, 0.108, 0.012), metalDark);
+  gripGroove2.position.set(-0.015, -0.19, -0.17);
+  knife.add(gripGroove2);
+
+  const knifeGuard = new THREE.Mesh(new THREE.BoxGeometry(0.105, 0.022, 0.038), metalDark);
+  knifeGuard.position.set(-0.015, -0.19, -0.265);
+  knife.add(knifeGuard);
+
+  const knifeBlade = new THREE.Mesh(new THREE.BoxGeometry(0.064, 0.018, 0.34), bladeMaterial);
+  knifeBlade.position.set(-0.015, -0.19, -0.455);
+  knife.add(knifeBlade);
+
+  const knifeEdge = new THREE.Mesh(new THREE.BoxGeometry(0.018, 0.012, 0.31), metalAccent);
+  knifeEdge.position.set(0.014, -0.178, -0.455);
+  knifeEdge.rotation.z = 0.08;
+  knife.add(knifeEdge);
+
   group.add(ak47);
   group.add(shotgun);
   group.add(sniper);
+  group.add(knife);
 
   const muzzleAk = new THREE.Object3D();
   muzzleAk.position.set(-0.02, -0.16, -1.05);
@@ -179,8 +211,12 @@ export function createViewModel() {
   muzzleSniper.position.set(-0.015, -0.14, -1.3);
   sniper.add(muzzleSniper);
 
-  group.userData.weaponModels = { ak47, shotgun, sniper };
-  group.userData.muzzles = { ak47: muzzleAk, shotgun: muzzleShotgun, sniper: muzzleSniper };
+  const muzzleKnife = new THREE.Object3D();
+  muzzleKnife.position.set(-0.015, -0.19, -0.64);
+  knife.add(muzzleKnife);
+
+  group.userData.weaponModels = { ak47, shotgun, sniper, knife };
+  group.userData.muzzles = { ak47: muzzleAk, shotgun: muzzleShotgun, sniper: muzzleSniper, knife: muzzleKnife };
   group.userData.armGroup = armGroup;
   group.userData.activeMuzzle = muzzleAk;
   group.userData.activeWeapon = "ak47";
