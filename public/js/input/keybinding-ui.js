@@ -1,5 +1,5 @@
 import { DEFAULT_KEY_BINDINGS, KEY_BINDING_ROWS } from "../config.js";
-import { hudControlsHint, hudGrenadeKey, keyBindingsList, keyBindingsReset, mobileControlsQuery } from "../dom.js";
+import { hudGrenadeKey, keyBindingsList, keyBindingsReset } from "../dom.js";
 import {
   formatKeyLabel,
   getKeyBindingFromEvent,
@@ -64,8 +64,6 @@ function buildKeyBindingsUi() {
 }
 
 export function updateHudKeyHints() {
-  const move = [keyBindings.forward, keyBindings.left, keyBindings.back, keyBindings.right].map(formatKeyLabel).join(" ");
-  if (hudControlsHint) hudControlsHint.textContent = mobileControlsQuery.matches ? "Joystick + glisser" : `${move} + souris`;
   if (hudGrenadeKey) hudGrenadeKey.textContent = formatKeyLabel(keyBindings.grenade);
   onBindingsChanged();
 }

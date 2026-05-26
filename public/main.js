@@ -21,10 +21,6 @@ import {
   hudGrenade,
   hudHealth,
   hudHealthFill,
-  hudRoom,
-  hudTeam,
-  hudWeapon,
-  hudWeaponName,
   menu,
   mobileControlsQuery,
   nameInput,
@@ -363,17 +359,14 @@ const remoteMeshes = new Map();
 
 function updateHealthHud() {
   const clampedHealth = THREE.MathUtils.clamp(Math.round(state.health), 0, 100);
-  hudHealth.textContent = `Vie: ${clampedHealth}`;
-  hudHealth.style.color = clampedHealth <= 25 ? "#ff607f" : clampedHealth <= 55 ? "#ffbf66" : "";
+  if (hudHealth) hudHealth.textContent = `Vie: ${clampedHealth}`;
+  const healthMeter = hudHealthFill?.closest("[role='meter']");
+  if (healthMeter) healthMeter.setAttribute("aria-valuenow", String(clampedHealth));
   if (hudHealthFill) {
     const ratio = clampedHealth / 100;
-    hudHealthFill.style.transform = `scaleX(${ratio})`;
+    hudHealthFill.style.transform = `scaleY(${ratio})`;
     hudHealthFill.style.filter = clampedHealth <= 25 ? "brightness(0.85)" : "";
   }
-}
-
-function updateTeamHud() {
-  hudTeam.textContent = "Mode: Chacun pour soi";
 }
 
 function ensureRemotePlayer(id) {
@@ -606,7 +599,6 @@ function connect() {
       weaponChoice.querySelectorAll("button").forEach((b) => {
         b.classList.toggle("active", b.getAttribute("data-weapon") === state.weapon);
       });
-      updateTeamHud();
       updateGrenadeHud();
       enterGame();
       return;
@@ -726,8 +718,14 @@ function renderRooms(rooms) {
   rooms.forEach((room) => {
     const item = document.createElement("article");
     item.className = `room-item ${room.count >= room.max ? "full" : ""}`;
-    item.innerHTML = `<strong>${room.id}</strong><span>${room.count}/${room.max}</span>`;
+    item.innerHTML = `
+      <div class="room-item__meta">
+        <strong>${room.id}</strong>
+        <span>${room.count}/${room.max} joueurs</span>
+      </div>
+    `;
     const btn = document.createElement("button");
+    btn.className = "room-join-button";
     btn.textContent = room.count >= room.max ? "Pleine" : "Rejoindre";
     btn.disabled = room.count >= room.max;
     btn.addEventListener("click", () => joinRoom(room.id));
@@ -749,9 +747,6 @@ function enterGame() {
   crosshair.classList.remove("hidden");
   playerList.classList.remove("hidden");
   pauseMenuOverlay.classList.add("hidden");
-  hudRoom.textContent = state.roomId;
-  updateTeamHud();
-  updateWeaponHud();
   updateGrenadeHud();
   updateHealthHud();
   updateRespawnNotice();
@@ -779,25 +774,6 @@ function setPauseMenu(open) {
 
 function togglePauseMenu() {
   setPauseMenu(!state.pauseOpen);
-}
-
-function weaponLabel(w) {
-  return WEAPON_STATS[w]?.label || WEAPON_STATS.ak47.label;
-}
-
-function updateWeaponHud(weapon = state.weapon) {
-  if (!hudWeapon) return;
-  const key = WEAPON_STATS[weapon] ? weapon : "ak47";
-  hudWeapon.dataset.weapon = key;
-  hudWeapon.classList.remove("hud-weapon--ak47", "hud-weapon--shotgun", "hud-weapon--sniper");
-  hudWeapon.classList.add(`hud-weapon--${key}`);
-  hudWeapon.querySelectorAll(".hud-weapon__svg").forEach((svg) => {
-    svg.classList.toggle("is-active", svg.classList.contains(`hud-weapon__svg--${key}`));
-  });
-  if (hudWeaponName) {
-    hudWeaponName.textContent = weaponLabel(key);
-  }
-  hudWeapon.setAttribute("aria-label", `Arme équipée : ${weaponLabel(key)}`);
 }
 
 function getWeaponStats(weapon = state.weapon) {
@@ -838,7 +814,6 @@ function updatePlayerList(players) {
     state.health = Number(me.health) || state.health;
     setLocalAlive(me.alive !== false);
     state.team = me.team || state.team;
-    updateTeamHud();
     updateHealthHud();
   }
 
@@ -896,7 +871,6 @@ weaponChoice.addEventListener("click", (event) => {
   setActiveWeaponModel(weapon);
   weaponChoice.querySelectorAll("button").forEach((b) => b.classList.remove("active"));
   target.classList.add("active");
-  updateWeaponHud(weapon);
   if (state.ws && state.ws.readyState === WebSocket.OPEN) {
     state.ws.send(JSON.stringify({ type: "weapon:select", weapon }));
   }

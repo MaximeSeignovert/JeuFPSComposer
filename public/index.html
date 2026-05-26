@@ -4,94 +4,38 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>FPS 5v5 Three.js</title>
+    <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
     <main id="app">
-      <section id="menu" class="panel">
+      <section id="menu" class="panel launch-panel">
+        <div class="launch-kicker">Connexion arena</div>
         <h1>FPS Arena 5v5</h1>
-        <p class="subtitle">Choisis ton pseudo et une room.</p>
+        <p class="subtitle">Choisis ton pseudo et entre dans une room.</p>
 
-        <div class="field-row">
+        <div class="field-row launch-field">
           <label for="nameInput">Pseudo</label>
           <input id="nameInput" type="text" maxlength="20" value="Player" />
         </div>
 
-        <h2>Rooms</h2>
+        <h2>Rooms disponibles</h2>
         <div id="roomsList" class="rooms-list"></div>
       </section>
 
       <section id="hud" class="hud hidden">
-        <div class="hud-left">
-          <strong id="hudRoom">Room ?</strong>
-          <span id="hudTeam">Equipe ?</span>
+        <div
+          class="hud-health-wrap fixed left-4 top-1/2 z-20 flex h-[38vh] min-h-44 max-h-80 w-3 -translate-y-1/2 items-end overflow-hidden rounded-full pointer-events-none"
+          role="meter"
+          aria-label="Vie"
+          aria-valuemin="0"
+          aria-valuemax="100"
+          aria-valuenow="100"
+        >
+          <span id="hudHealth" class="sr-only">Vie: 100</span>
+          <div id="hudHealthFill" class="hud-health-fill h-full w-full origin-bottom rounded-full"></div>
         </div>
-        <div class="hud-right">
-          <div
-            id="hudWeapon"
-            class="hud-weapon hud-weapon--ak47"
-            data-weapon="ak47"
-            role="status"
-            aria-label="Arme équipée"
-          >
-            <div class="hud-weapon__icon-wrap">
-              <svg
-                class="hud-weapon__svg hud-weapon__svg--ak47 is-active"
-                viewBox="0 0 48 24"
-                width="44"
-                height="22"
-                aria-hidden="true"
-              >
-                <path d="M 2,17 L 8,14 L 8,9 L 2,10 Z" class="hud-wp-stock" />
-                <path d="M 8,9 L 22,9 L 22,14 L 15,15 L 8,14 Z" class="hud-wp-body" />
-                <path d="M 8,14 L 11,14 L 9,20 L 7,20 Z" class="hud-wp-stock" />
-                <path d="M 13,14 L 17,14 L 16,21 C 14,21 11,18 12,14 Z" class="hud-wp-mag" />
-                <path d="M 22,10 L 32,10 L 32,12 L 22,13 Z" class="hud-wp-stock" />
-                <path d="M 22,8 L 31,8 L 31,10 L 22,10 Z" class="hud-wp-barrel" />
-                <path d="M 32,10.5 L 43,10.5 L 43,11.5 L 32,11.5 Z" class="hud-wp-barrel" />
-                <path d="M 39,10.5 L 41,10.5 L 41,8 L 40,8 Z" class="hud-wp-sight" />
-                <path d="M 18,8 L 20,8 L 20,9 L 18,9 Z" class="hud-wp-sight" />
-              </svg>
-              <svg
-                class="hud-weapon__svg hud-weapon__svg--shotgun"
-                viewBox="0 0 48 24"
-                width="44"
-                height="22"
-                aria-hidden="true"
-              >
-                <path d="M 2,16 L 9,13 L 9,9 L 2,10 Z" class="hud-wp-stock" />
-                <path d="M 9,9 L 20,9 L 20,14 L 13,14 L 9,13 Z" class="hud-wp-body" />
-                <path d="M 9,13 L 11,13 L 10,18 L 8,18 Z" class="hud-wp-stock" />
-                <path d="M 20,9 L 44,9 L 44,11 L 20,11 Z" class="hud-wp-barrel" />
-                <path d="M 20,11 L 40,11 L 40,12.5 L 20,12.5 Z" class="hud-wp-barrel" />
-                <path d="M 22,11 L 30,11 L 29,14 L 23,14 Z" class="hud-wp-pump" />
-              </svg>
-              <svg
-                class="hud-weapon__svg hud-weapon__svg--sniper"
-                viewBox="0 0 48 24"
-                width="44"
-                height="22"
-                aria-hidden="true"
-              >
-                <path d="M 2,16 L 9,13 L 9,10 L 2,12 Z" class="hud-wp-stock" />
-                <path d="M 4,11 L 8,10 L 8,9 L 4,10 Z" class="hud-wp-body" />
-                <path d="M 9,10 L 20,10 L 20,14 L 13,14 L 9,13 Z" class="hud-wp-body" />
-                <path d="M 9,13 L 11,13 L 10,18 L 8,18 Z" class="hud-wp-stock" />
-                <path d="M 20,11 L 30,11 L 28,13 L 20,13 Z" class="hud-wp-stock" />
-                <path d="M 20,10 L 46,10 L 46,11 L 20,11 Z" class="hud-wp-barrel" />
-                <path d="M 43,9.5 L 46,9.5 L 46,11.5 L 43,11.5 Z" class="hud-wp-barrel" />
-                <path d="M 12,10 L 13,7 L 16,7 L 17,10 Z" class="hud-wp-scope" />
-                <path d="M 10,5 L 20,5 L 20,7 L 10,7 Z" class="hud-wp-scope" />
-                <path d="M 18,4 L 22,4 L 22,8 L 18,8 Z" class="hud-wp-scope" />
-                <path d="M 7,4.5 L 10,4.5 L 10,7.5 L 7,7.5 Z" class="hud-wp-scope" />
-                <path d="M 26,13 L 28,15 L 27,15 L 25,13 Z" class="hud-wp-body" />
-              </svg>
-            </div>
-            <div class="hud-weapon__meta">
-              <span class="hud-weapon__title">Arme</span>
-              <span id="hudWeaponName" class="hud-weapon__name">AK47</span>
-            </div>
-          </div>
+        <div class="hud-right fixed right-4 top-4 z-20 flex items-center gap-3 pointer-events-none">
           <div
             id="hudGrenade"
             class="hud-grenade hud-grenade--empty"
@@ -129,13 +73,6 @@
               <span class="hud-grenade__key hud-grenade__key--ready"><kbd id="hudGrenadeKey">G</kbd> lancer</span>
               <span class="hud-grenade__key hud-grenade__key--empty">Sur la map</span>
             </div>
-          </div>
-          <span id="hudControlsHint">Déplacement + souris</span>
-        </div>
-        <div class="hud-health-wrap">
-          <span id="hudHealth">Vie: 100</span>
-          <div class="hud-health-bar">
-            <div id="hudHealthFill" class="hud-health-fill"></div>
           </div>
         </div>
       </section>
