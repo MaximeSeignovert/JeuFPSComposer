@@ -55,6 +55,7 @@ import {
 } from "./js/players/appearance.js";
 import { state } from "./js/state.js";
 import { createViewModel } from "./js/weapons.js";
+import { MAP_LAYOUT } from "./js/world/map-layout.js";
 import { createSceneSetup } from "./js/world/scene.js";
 
 /** 0–1 : transition visée épaule (AK / pompe) vers alignement sous le réticule */
@@ -105,10 +106,7 @@ function addStaticWorldMesh(mesh, includePhysics = true) {
   }
 }
 
-const mapConfig = {
-  platform: { width: 18, depth: 14, topY: 3.8, thickness: 1.2 },
-  ramp: { width: 8.4, depth: 7.6, topY: 3.8, baseY: 0, thickness: 0.34 }
-};
+const mapConfig = MAP_LAYOUT;
 
 const platform = new THREE.Mesh(
   new THREE.BoxGeometry(
@@ -116,9 +114,13 @@ const platform = new THREE.Mesh(
     mapConfig.platform.thickness,
     mapConfig.platform.depth
   ),
-  new THREE.MeshStandardMaterial({ color: 0xe4d1a9, roughness: 0.72, metalness: 0.03 })
+  new THREE.MeshStandardMaterial(mapConfig.platform.material)
 );
-platform.position.set(0, mapConfig.platform.topY - mapConfig.platform.thickness * 0.5, 0);
+platform.position.set(
+  mapConfig.platform.x,
+  mapConfig.platform.topY - mapConfig.platform.thickness * 0.5,
+  mapConfig.platform.z
+);
 // Keep platform out of lateral blockers to avoid sticking while walking on top.
 addStaticWorldMesh(platform, false);
 
@@ -129,7 +131,7 @@ const rampGeometry = new THREE.BoxGeometry(rampLength, mapConfig.ramp.thickness,
 
 const leftRamp = new THREE.Mesh(
   rampGeometry,
-  new THREE.MeshStandardMaterial({ color: 0xffc74d, roughness: 0.72, metalness: 0.02 })
+  new THREE.MeshStandardMaterial(mapConfig.ramp.material)
 );
 leftRamp.position.set(
   -(mapConfig.platform.width / 2 + mapConfig.ramp.width / 2),
@@ -145,9 +147,9 @@ rightRamp.rotation.z = -leftRamp.rotation.z;
 addStaticWorldMesh(rightRamp, false);
 
 const coverMaterial = new THREE.MeshStandardMaterial({
-  color: 0x4f80d9,
-  roughness: 0.8,
-  metalness: 0.02
+  color: mapConfig.coverMaterial.color,
+  roughness: mapConfig.coverMaterial.roughness,
+  metalness: mapConfig.coverMaterial.metalness
 });
 
 function addCoverBlock(x, z, width, height, depth, colorOffset = 0) {
@@ -161,41 +163,38 @@ function addCoverBlock(x, z, width, height, depth, colorOffset = 0) {
 function addTallPillar(x, z) {
   const pillar = new THREE.Mesh(
     new THREE.BoxGeometry(2.2, 5.2, 2.2),
-    new THREE.MeshStandardMaterial({ color: 0xff6a6a, roughness: 0.76, metalness: 0.03 })
+    new THREE.MeshStandardMaterial(mapConfig.pillarMaterial)
   );
   pillar.position.set(x, 2.6, z);
   addStaticWorldMesh(pillar);
 }
 
-[-1, 1].forEach((side) => {
-  const x = side * 30;
-  addCoverBlock(x, -24, 5.4, 2.6, 3.4, 0.02);
-  addCoverBlock(x, -8, 3.8, 2.2, 3.2, -0.08);
-  addCoverBlock(x, 8, 3.8, 2.2, 3.2, 0.1);
-  addCoverBlock(x, 24, 5.4, 2.6, 3.4, -0.12);
-  addCoverBlock(side * 22, -16, 3.2, 1.6, 2.8, 0.16);
-  addCoverBlock(side * 22, 16, 3.2, 1.6, 2.8, -0.18);
+function addStackedCrates(x, z, side = 1, colorOffset = 0) {
+  addCoverBlock(x, z, 3.2, 1.2, 3.2, colorOffset);
+  addCoverBlock(x + side * 0.55, z - side * 0.35, 1.8, 3.1, 1.8, colorOffset + 0.08);
+}
+
+mapConfig.coverBlocks.forEach((block) => {
+  addCoverBlock(block.x, block.z, block.width, block.height, block.depth, block.colorOffset);
 });
 
-addTallPillar(0, -24);
-addTallPillar(0, 24);
+mapConfig.stackedCrates.forEach((crateStack) => {
+  addStackedCrates(crateStack.x, crateStack.z, crateStack.side, crateStack.colorOffset);
+});
 
-const sideWallMaterial = new THREE.MeshStandardMaterial({ color: 0x8ec66b, roughness: 0.9 });
-const sideWallLeft = new THREE.Mesh(new THREE.BoxGeometry(2, 4, 85), sideWallMaterial);
-sideWallLeft.position.set(-42, 2, 0);
-addStaticWorldMesh(sideWallLeft);
+mapConfig.tallPillars.forEach((pillar) => {
+  addTallPillar(pillar.x, pillar.z);
+});
 
-const sideWallRight = sideWallLeft.clone();
-sideWallRight.position.x = 42;
-addStaticWorldMesh(sideWallRight);
-
-const backWall = new THREE.Mesh(new THREE.BoxGeometry(85, 4, 2), sideWallMaterial);
-backWall.position.set(0, 2, -42);
-addStaticWorldMesh(backWall);
-
-const frontWall = backWall.clone();
-frontWall.position.z = 42;
-addStaticWorldMesh(frontWall);
+const sideWallMaterial = new THREE.MeshStandardMaterial(mapConfig.wallMaterial);
+mapConfig.boundaryWalls.forEach((wall) => {
+  const wallMesh = new THREE.Mesh(
+    new THREE.BoxGeometry(wall.width, wall.height, wall.depth),
+    sideWallMaterial
+  );
+  wallMesh.position.set(wall.x, wall.y, wall.z);
+  addStaticWorldMesh(wallMesh);
+});
 
 function addJumpPad(x, z, color = 0x5fe1ff) {
   const pad = new THREE.Group();
@@ -266,14 +265,13 @@ function addSpinnerProp(x, z, color = 0xffa64d) {
   });
 }
 
-addJumpPad(-26, 0, 0x68e6ff);
-addJumpPad(26, 0, 0x7fff95);
-addJumpPad(0, -30, 0xff89cf);
-addJumpPad(0, 30, 0xffd05a);
-addSpinnerProp(-14, -14, 0x74f7ff);
-addSpinnerProp(14, 14, 0xff8ad7);
-addSpinnerProp(-14, 14, 0xffd673);
-addSpinnerProp(14, -14, 0x8cff7b);
+mapConfig.jumpPads.forEach((pad) => {
+  addJumpPad(pad.x, pad.z, pad.color);
+});
+
+mapConfig.spinnerProps.forEach((prop) => {
+  addSpinnerProp(prop.x, prop.z, prop.color);
+});
 
 function createGrenadePickupMesh() {
   const group = new THREE.Group();
