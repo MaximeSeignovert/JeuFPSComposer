@@ -496,9 +496,9 @@ function updateDeathCamera(delta) {
 
   const focusPos = killer.root.position.clone().add(new THREE.Vector3(0, 1.35, 0));
   const killerForward = new THREE.Vector3(
-    Math.sin(killer.root.rotation.y || 0),
+    -Math.sin(killer.root.rotation.y || 0),
     0,
-    Math.cos(killer.root.rotation.y || 0)
+    -Math.cos(killer.root.rotation.y || 0)
   );
   const desiredCam = focusPos.clone().addScaledVector(killerForward, -3.3);
   desiredCam.y += 1.1;

@@ -11,6 +11,9 @@ export function createPlayerMesh(isLocal = false) {
 
   const root = new THREE.Group();
   root.position.y = 0;
+  const bodyGroup = new THREE.Group();
+  bodyGroup.rotation.y = Math.PI;
+  root.add(bodyGroup);
 
   const skinMaterial = new THREE.MeshStandardMaterial({ color: 0xd9ad84, roughness: 0.78, flatShading: true });
   const shirtMaterial = new THREE.MeshStandardMaterial({ color: 0x4f8cf6, roughness: 0.75, flatShading: true });
@@ -37,7 +40,7 @@ export function createPlayerMesh(isLocal = false) {
   const backpack = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.5, 0.2), accMaterial);
   backpack.position.set(0, 0, -0.2);
   torsoGroup.add(backpack);
-  root.add(torsoGroup);
+  bodyGroup.add(torsoGroup);
 
   const headGroup = new THREE.Group();
   headGroup.position.set(0, 1.95, 0);
@@ -52,7 +55,7 @@ export function createPlayerMesh(isLocal = false) {
   const visor = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.1, 0.1), visorMaterial);
   visor.position.set(0, 0, 0.15);
   headGroup.add(visor);
-  root.add(headGroup);
+  bodyGroup.add(headGroup);
 
   const armGeo = new THREE.BoxGeometry(0.15, 0.45, 0.15);
   const handGeo = new THREE.BoxGeometry(0.12, 0.15, 0.12);
@@ -66,7 +69,7 @@ export function createPlayerMesh(isLocal = false) {
   leftHand.position.y = -0.525;
   leftArmGroup.add(leftHand);
   leftArmGroup.rotation.z = 0.1;
-  root.add(leftArmGroup);
+  bodyGroup.add(leftArmGroup);
 
   const rightArmGroup = new THREE.Group();
   rightArmGroup.position.set(0.35, 1.65, 0);
@@ -86,7 +89,7 @@ export function createPlayerMesh(isLocal = false) {
   rightArmGroup.add(gunBarrel);
 
   rightArmGroup.rotation.z = -0.1;
-  root.add(rightArmGroup);
+  bodyGroup.add(rightArmGroup);
 
   const legGeo = new THREE.BoxGeometry(0.18, 0.5, 0.18);
   const leftLegGroup = new THREE.Group();
@@ -97,7 +100,7 @@ export function createPlayerMesh(isLocal = false) {
   const leftShoe = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.15, 0.25), shoeMaterial);
   leftShoe.position.set(0, -0.575, 0.03);
   leftLegGroup.add(leftShoe);
-  root.add(leftLegGroup);
+  bodyGroup.add(leftLegGroup);
 
   const rightLegGroup = new THREE.Group();
   rightLegGroup.position.set(0.15, 0.9, 0);
@@ -107,7 +110,7 @@ export function createPlayerMesh(isLocal = false) {
   const rightShoe = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.15, 0.25), shoeMaterial);
   rightShoe.position.set(0, -0.575, 0.03);
   rightLegGroup.add(rightShoe);
-  root.add(rightLegGroup);
+  bodyGroup.add(rightLegGroup);
 
   const hitbox = new THREE.Mesh(
     new THREE.CapsuleGeometry(0.35, 1.1, 6, 10),

@@ -302,7 +302,7 @@ function startDevBot(room) {
     const tangentZ = Math.cos(angle);
     const dirLength = Math.hypot(tangentX, tangentZ) || 1;
     room.devBot.direction = { x: tangentX / dirLength, y: 0, z: tangentZ / dirLength };
-    room.devBot.rotationY = Math.atan2(room.devBot.direction.x, room.devBot.direction.z);
+    room.devBot.rotationY = Math.atan2(-room.devBot.direction.x, -room.devBot.direction.z);
     room.devBot.position = { x, y: room.devBot.center.y, z };
 
     sendToRoom(room.id, {
