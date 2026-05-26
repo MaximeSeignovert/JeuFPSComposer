@@ -24,6 +24,7 @@ const state = {
   lastShotAt: 0,
   lastJumpPadBoostAt: 0,
   isFiring: false,
+  primaryFireHeld: false,
   isAiming: false,
   health: 100,
   isAlive: true,
@@ -161,6 +162,7 @@ const touchAimBtn = document.getElementById("touchAimBtn");
 const touchJumpBtn = document.getElementById("touchJumpBtn");
 const touchGrenadeBtn = document.getElementById("touchGrenadeBtn");
 const touchPauseBtn = document.getElementById("touchPauseBtn");
+const touchFullscreenBtn = document.getElementById("touchFullscreenBtn");
 const mobileControlsQuery = window.matchMedia("(max-width: 820px), (hover: none), (pointer: coarse)");
 const touchInput = {
   move: { pointerId: null, x: 0, y: 0, strength: 0 },
@@ -282,6 +284,7 @@ function saveKeyBindings() {
 
 const keyBindings = loadKeyBindings();
 let rebindTarget = null;
+const app = document.getElementById("app");
 
 function assignKeyBinding(action, newCode) {
   newCode = normalizeKeyBindingValue(newCode);
@@ -367,6 +370,7 @@ function resetTouchInput() {
   touchInput.look.lastX = 0;
   touchInput.look.lastY = 0;
   state.isFiring = false;
+  state.primaryFireHeld = false;
   touchFireBtn?.classList.remove("is-active");
   touchAimBtn?.classList.toggle("is-active", state.isAiming);
 }
@@ -377,6 +381,45 @@ function syncTouchControls() {
   touchControls.classList.toggle("hidden", !show);
   if (!show) resetTouchInput();
   updateHudKeyHints();
+  syncFullscreenButton();
+}
+
+function getFullscreenElement() {
+  return document.fullscreenElement || document.webkitFullscreenElement || null;
+}
+
+function syncFullscreenButton() {
+  if (!touchFullscreenBtn) return;
+  const fullscreenTarget = getFullscreenElement();
+  const isFullscreen = fullscreenTarget === document.documentElement || fullscreenTarget === document.body || fullscreenTarget === app;
+  touchFullscreenBtn.classList.toggle("is-active", isFullscreen);
+  touchFullscreenBtn.setAttribute("aria-label", isFullscreen ? "Quitter le plein écran" : "Plein écran");
+  touchFullscreenBtn.title = isFullscreen ? "Quitter le plein écran" : "Plein écran";
+}
+
+function resizeRendererToViewport() {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+}
+
+async function toggleFullscreenMode() {
+  const fullscreenElement = getFullscreenElement();
+  try {
+    if (fullscreenElement) {
+      const exitFullscreen = document.exitFullscreen || document.webkitExitFullscreen;
+      if (exitFullscreen) await exitFullscreen.call(document);
+    } else {
+      const target = app || document.documentElement;
+      const requestFullscreen = target.requestFullscreen || target.webkitRequestFullscreen;
+      if (requestFullscreen) await requestFullscreen.call(target);
+    }
+  } catch {
+    // Some mobile browsers reject fullscreen outside trusted gestures.
+  } finally {
+    syncFullscreenButton();
+    setTimeout(resizeRendererToViewport, 80);
+  }
 }
 
 function updateTouchStickFromEvent(stick, data, event) {
@@ -481,18 +524,14 @@ function bindTouchControls() {
   bindTouchButton(
     touchFireBtn,
     () => {
-      if (!state.joined || state.pauseOpen || !state.isAlive) return;
-      const stats = getWeaponStats();
-      state.isFiring = true;
+      if (!beginPrimaryFire()) return;
       touchFireBtn?.classList.add("is-active");
-      shoot();
-      if (!stats.auto) {
-        state.isFiring = false;
+      if (!getWeaponStats().auto) {
         touchFireBtn?.classList.remove("is-active");
       }
     },
     () => {
-      state.isFiring = false;
+      endPrimaryFire();
       touchFireBtn?.classList.remove("is-active");
     }
   );
@@ -506,6 +545,7 @@ function bindTouchControls() {
   bindTouchButton(touchPauseBtn, () => {
     if (state.joined) togglePauseMenu();
   });
+  bindTouchButton(touchFullscreenBtn, toggleFullscreenMode);
 }
 
 function onKeydownCaptureForRebind(e) {
@@ -1810,11 +1850,12 @@ weaponChoice.addEventListener("click", (event) => {
 });
 
 window.addEventListener("resize", () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
+  resizeRendererToViewport();
   syncTouchControls();
 });
+
+document.addEventListener("fullscreenchange", syncFullscreenButton);
+document.addEventListener("webkitfullscreenchange", syncFullscreenButton);
 
 if (mobileControlsQuery.addEventListener) {
   mobileControlsQuery.addEventListener("change", syncTouchControls);
@@ -1865,13 +1906,25 @@ canvas.addEventListener("click", () => {
     canvas.requestPointerLock();
   }
 });
-canvas.addEventListener("mousedown", (event) => {
-  if (event.button !== 0) return;
-  if (!state.joined || state.pauseOpen || !state.isAlive || !hasGameLookInput()) return;
+
+function beginPrimaryFire() {
+  if (!state.joined || state.pauseOpen || !state.isAlive || !hasGameLookInput()) return false;
   const stats = getWeaponStats();
+  state.primaryFireHeld = true;
   state.isFiring = true;
   shoot();
   if (!stats.auto) state.isFiring = false;
+  return true;
+}
+
+function endPrimaryFire() {
+  state.primaryFireHeld = false;
+  state.isFiring = false;
+}
+
+canvas.addEventListener("mousedown", (event) => {
+  if (event.button !== 0) return;
+  beginPrimaryFire();
 });
 canvas.addEventListener("mousedown", (event) => {
   if (event.button !== 2) return;
@@ -1879,11 +1932,14 @@ canvas.addEventListener("mousedown", (event) => {
   state.isAiming = true;
 });
 canvas.addEventListener("mouseup", (event) => {
-  if (event.button === 0) state.isFiring = false;
+  if (event.button === 0) endPrimaryFire();
   if (event.button === 2) state.isAiming = false;
 });
+document.addEventListener("mouseup", (event) => {
+  if (event.button === 0) endPrimaryFire();
+});
 window.addEventListener("blur", () => {
-  state.isFiring = false;
+  endPrimaryFire();
   state.isAiming = false;
   resetTouchInput();
 });
@@ -2129,11 +2185,12 @@ function animate() {
   camera.rotation.set(state.pitch, state.yaw, 0, "YXZ");
   updateMovement(delta);
   if (
-    state.isFiring &&
+    (state.isFiring || state.primaryFireHeld) &&
     getWeaponStats().auto &&
     !state.pauseOpen &&
     hasGameLookInput()
   ) {
+    state.isFiring = true;
     shoot();
   }
   animateViewModel(delta);
