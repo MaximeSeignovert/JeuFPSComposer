@@ -1583,11 +1583,14 @@ function updateMovement(delta) {
   const currentMoveSpeed = state.moveSpeed * speedMultiplier;
 
   const targetVelocity = new THREE.Vector3()
-    .addScaledVector(dir, fwd * currentMoveSpeed)
-    .addScaledVector(side, right * currentMoveSpeed);
+    .addScaledVector(dir, fwd)
+    .addScaledVector(side, right)
+    .clampLength(0, 1)
+    .multiplyScalar(currentMoveSpeed);
   const hasInput = fwd !== 0 || right !== 0;
   const smoothing = Math.min(delta * (hasInput ? 14 : 10), 1);
   smoothedMoveVelocity.lerp(targetVelocity, smoothing);
+  if (hasInput) smoothedMoveVelocity.clampLength(0, currentMoveSpeed);
 
   state.verticalVelocity -= state.gravity * delta;
   camera.position.y += state.verticalVelocity * delta;
