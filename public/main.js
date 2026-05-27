@@ -96,6 +96,8 @@ scene.add(floor);
 const worldColliders = [floor];
 const staticBlockColliders = [];
 const playerCollisionRadius = 0.34;
+const blockStandTolerance = 0.08;
+const collisionEpsilon = 0.001;
 const mapAnimators = [];
 const jumpPads = [];
 const grenadePickups = new Map();
@@ -1031,14 +1033,13 @@ function resolveHorizontalMovement(previousPos, delta) {
     camera.position.z = previousPos.z;
     smoothedMoveVelocity.z = 0;
   }
+
+  resolveHorizontalPenetration(playerBottom, playerTop);
 }
 
 function isCollidingAt(x, z, playerBottom, playerTop) {
-  const standTolerance = 0.12;
   for (const box of staticBlockColliders) {
-    // Allow movement when the player is standing on top of a block.
-    if (playerBottom >= box.max.y - standTolerance) continue;
-    if (playerTop <= box.min.y || playerBottom >= box.max.y) continue;
+    if (!isBlockLateralCollider(box, playerBottom, playerTop)) continue;
     const closestX = THREE.MathUtils.clamp(x, box.min.x, box.max.x);
     const closestZ = THREE.MathUtils.clamp(z, box.min.z, box.max.z);
     const deltaX = x - closestX;
@@ -1047,6 +1048,60 @@ function isCollidingAt(x, z, playerBottom, playerTop) {
     if (distSq < playerCollisionRadius * playerCollisionRadius) return true;
   }
   return false;
+}
+
+function isBlockLateralCollider(box, playerBottom, playerTop) {
+  if (playerTop <= box.min.y || playerBottom >= box.max.y) return false;
+  // Only ignore side walls near the top while landing or standing. While rising,
+  // the player must still collide with the block side instead of slipping inside it.
+  if (state.verticalVelocity <= 0 && playerBottom >= box.max.y - blockStandTolerance) return false;
+  return true;
+}
+
+function resolveHorizontalPenetration(playerBottom, playerTop) {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    let moved = false;
+    for (const box of staticBlockColliders) {
+      if (!isBlockLateralCollider(box, playerBottom, playerTop)) continue;
+      const push = getCircleBoxPush(camera.position.x, camera.position.z, box);
+      if (!push) continue;
+      camera.position.x += push.x;
+      camera.position.z += push.z;
+      if (push.x !== 0) smoothedMoveVelocity.x = 0;
+      if (push.z !== 0) smoothedMoveVelocity.z = 0;
+      moved = true;
+    }
+    if (!moved) break;
+  }
+}
+
+function getCircleBoxPush(x, z, box) {
+  const closestX = THREE.MathUtils.clamp(x, box.min.x, box.max.x);
+  const closestZ = THREE.MathUtils.clamp(z, box.min.z, box.max.z);
+  const deltaX = x - closestX;
+  const deltaZ = z - closestZ;
+  const distSq = deltaX * deltaX + deltaZ * deltaZ;
+  const radiusSq = playerCollisionRadius * playerCollisionRadius;
+  if (distSq >= radiusSq) return null;
+
+  if (distSq > 0.000001) {
+    const dist = Math.sqrt(distSq);
+    const pushDistance = playerCollisionRadius - dist + collisionEpsilon;
+    return {
+      x: (deltaX / dist) * pushDistance,
+      z: (deltaZ / dist) * pushDistance
+    };
+  }
+
+  const toLeft = x - box.min.x;
+  const toRight = box.max.x - x;
+  const toBack = z - box.min.z;
+  const toFront = box.max.z - z;
+  const minDistance = Math.min(toLeft, toRight, toBack, toFront);
+  if (minDistance === toLeft) return { x: -(toLeft + playerCollisionRadius + collisionEpsilon), z: 0 };
+  if (minDistance === toRight) return { x: toRight + playerCollisionRadius + collisionEpsilon, z: 0 };
+  if (minDistance === toBack) return { x: 0, z: -(toBack + playerCollisionRadius + collisionEpsilon) };
+  return { x: 0, z: toFront + playerCollisionRadius + collisionEpsilon };
 }
 
 function getGroundHeightAt(x, z, feetY = 0) {
