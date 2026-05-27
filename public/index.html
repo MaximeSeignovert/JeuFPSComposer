@@ -74,6 +74,16 @@
               <span class="hud-grenade__key hud-grenade__key--empty">Sur la map</span>
             </div>
           </div>
+          <div
+            id="hudAmmo"
+            class="hud-ammo"
+            role="status"
+            aria-label="Munitions"
+          >
+            <span id="hudAmmoCount" class="hud-ammo__count">20/20</span>
+            <span class="hud-ammo__key"><kbd id="hudReloadKey">R</kbd> recharger</span>
+            <span id="hudReloadStatus" class="hud-ammo__status"></span>
+          </div>
         </div>
         <section id="killFeed" class="kill-feed" aria-live="polite" aria-label="Eliminations"></section>
       </section>
@@ -218,6 +228,7 @@
           <button id="touchAimBtn" class="touch-action" type="button">Visee</button>
           <button id="touchJumpBtn" class="touch-action" type="button">Saut</button>
           <button id="touchGrenadeBtn" class="touch-action" type="button">Grenade</button>
+          <button id="touchReloadBtn" class="touch-action" type="button">Reload</button>
           <button id="touchFireBtn" class="touch-action touch-action--fire" type="button">Tir</button>
         </div>
       </section>

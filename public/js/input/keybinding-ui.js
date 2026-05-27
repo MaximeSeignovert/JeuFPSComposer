@@ -1,5 +1,5 @@
 import { DEFAULT_KEY_BINDINGS, KEY_BINDING_ROWS } from "../config.js";
-import { hudGrenadeKey, keyBindingsList, keyBindingsReset } from "../dom.js";
+import { hudGrenadeKey, hudReloadKey, keyBindingsList, keyBindingsReset } from "../dom.js";
 import {
   formatKeyLabel,
   getKeyBindingFromEvent,
@@ -65,6 +65,7 @@ function buildKeyBindingsUi() {
 
 export function updateHudKeyHints() {
   if (hudGrenadeKey) hudGrenadeKey.textContent = formatKeyLabel(keyBindings.grenade);
+  if (hudReloadKey) hudReloadKey.textContent = formatKeyLabel(keyBindings.reload);
   onBindingsChanged();
 }
 

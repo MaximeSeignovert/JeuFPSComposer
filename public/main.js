@@ -21,9 +21,12 @@ import {
   deathScreen,
   hitmarker,
   hud,
+  hudAmmo,
+  hudAmmoCount,
   hudGrenade,
   hudHealth,
   hudHealthFill,
+  hudReloadStatus,
   killFeed,
   menu,
   mobileControlsQuery,
@@ -36,6 +39,7 @@ import {
   touchAimBtn,
   touchGrenadeBtn,
   touchInput,
+  touchReloadBtn,
   weaponChoice
 } from "./js/dom.js";
 import { formatKeyLabel } from "./js/key-bindings.js";
@@ -461,6 +465,7 @@ function setLocalAlive(alive) {
   if (!state.isAlive) {
     state.isFiring = false;
     state.isAiming = false;
+    cancelReload();
     resetTouchInput();
     sniperScope.classList.add("hidden");
     if (document.pointerLockElement === canvas) {
@@ -669,6 +674,7 @@ function connect() {
       state.weapon = msg.weapon;
       state.health = Number(msg.health) || 100;
       state.grenadesHeld = Math.max(0, Math.min(1, Number(msg.grenades) || 0));
+      refillAllMagazines();
       setLocalAlive(msg.alive !== false);
       if (msg.spawn) {
         applyLocalSpawn(msg.spawn);
@@ -678,6 +684,7 @@ function connect() {
         b.classList.toggle("active", b.getAttribute("data-weapon") === state.weapon);
       });
       updateGrenadeHud();
+      updateAmmoHud();
       enterGame();
       return;
     }
@@ -764,6 +771,7 @@ function connect() {
       state.health = Number(msg.health) || 100;
       state.grenadesHeld = Math.max(0, Math.min(1, Number(msg.grenades) || 0));
       state.respawnUntil = 0;
+      refillAllMagazines();
       setLocalAlive(msg.alive !== false);
       setPauseMenu(false);
       if (shouldUsePointerLock() && document.pointerLockElement !== canvas) {
@@ -771,6 +779,7 @@ function connect() {
       }
       updateHealthHud();
       updateGrenadeHud();
+      updateAmmoHud();
       syncTouchControls();
       return;
     }
@@ -845,6 +854,7 @@ function enterGame() {
   playerList.classList.remove("hidden");
   pauseMenuOverlay.classList.add("hidden");
   updateGrenadeHud();
+  updateAmmoHud();
   updateHealthHud();
   updateRespawnNotice();
   syncTouchControls();
@@ -875,6 +885,121 @@ function togglePauseMenu() {
 
 function getWeaponStats(weapon = state.weapon) {
   return WEAPON_STATS[weapon] || WEAPON_STATS.ak47;
+}
+
+function hasMagazine(weapon = state.weapon) {
+  return !getWeaponStats(weapon).melee;
+}
+
+function getMagazineSize(weapon = state.weapon) {
+  return Math.max(0, Number(getWeaponStats(weapon).magazineSize) || 0);
+}
+
+function getReloadDurationMs(weapon = state.weapon) {
+  return Math.max(0, Number(getWeaponStats(weapon).reloadMs) || 1200);
+}
+
+function ensureWeaponAmmo(weapon = state.weapon) {
+  if (!hasMagazine(weapon)) return Infinity;
+  const maxAmmo = getMagazineSize(weapon);
+  if (!Number.isFinite(state.ammoByWeapon[weapon])) {
+    state.ammoByWeapon[weapon] = maxAmmo;
+  }
+  state.ammoByWeapon[weapon] = THREE.MathUtils.clamp(
+    Math.round(state.ammoByWeapon[weapon]),
+    0,
+    maxAmmo
+  );
+  return state.ammoByWeapon[weapon];
+}
+
+function refillAllMagazines() {
+  Object.keys(WEAPON_STATS).forEach((weapon) => {
+    if (hasMagazine(weapon)) state.ammoByWeapon[weapon] = getMagazineSize(weapon);
+  });
+  state.reloadWeapon = null;
+  state.reloadUntil = 0;
+  updateAmmoHud();
+}
+
+function cancelReload() {
+  state.reloadWeapon = null;
+  state.reloadUntil = 0;
+  updateAmmoHud();
+}
+
+function isReloadingWeapon(weapon = state.weapon) {
+  return state.reloadWeapon === weapon && performance.now() < state.reloadUntil;
+}
+
+function getReloadProgress(weapon = state.weapon) {
+  if (!isReloadingWeapon(weapon)) return 0;
+  const reloadMs = getReloadDurationMs(weapon);
+  if (reloadMs <= 0) return 1;
+  return THREE.MathUtils.clamp(1 - (state.reloadUntil - performance.now()) / reloadMs, 0, 1);
+}
+
+function startReload(manual = false) {
+  const weapon = state.weapon;
+  if (!hasMagazine(weapon) || isReloadingWeapon(weapon)) return false;
+  const ammo = ensureWeaponAmmo(weapon);
+  if (ammo >= getMagazineSize(weapon)) return false;
+
+  state.reloadWeapon = weapon;
+  state.reloadUntil = performance.now() + getReloadDurationMs(weapon);
+  state.isFiring = false;
+  if (manual) state.primaryFireHeld = false;
+  updateAmmoHud();
+  return true;
+}
+
+function reloadWeapon() {
+  return startReload(true);
+}
+
+function updateReloadState() {
+  if (!state.reloadWeapon) return;
+  if (performance.now() < state.reloadUntil) {
+    updateAmmoHud();
+    return;
+  }
+  const weapon = state.reloadWeapon;
+  state.ammoByWeapon[weapon] = getMagazineSize(weapon);
+  state.reloadWeapon = null;
+  state.reloadUntil = 0;
+  updateAmmoHud();
+}
+
+function updateAmmoHud() {
+  if (!hudAmmo) return;
+  const weapon = state.weapon;
+  const stats = getWeaponStats(weapon);
+  const usesMagazine = !stats.melee;
+  hudAmmo.classList.toggle("hud-ammo--hidden", !usesMagazine);
+  if (!usesMagazine) {
+    hudAmmo.setAttribute("aria-label", "Arme de melee");
+    if (touchReloadBtn) touchReloadBtn.disabled = true;
+    return;
+  }
+
+  const ammo = ensureWeaponAmmo(weapon);
+  const magazineSize = getMagazineSize(weapon);
+  const reloading = isReloadingWeapon(weapon);
+  const remainingMs = Math.max(0, state.reloadUntil - performance.now());
+  if (hudAmmoCount) hudAmmoCount.textContent = `${ammo}/${magazineSize}`;
+  if (hudReloadStatus) {
+    hudReloadStatus.textContent = reloading ? `Reload ${Math.ceil(remainingMs / 1000)}s` : "";
+  }
+  hudAmmo.classList.toggle("hud-ammo--empty", ammo <= 0);
+  hudAmmo.classList.toggle("hud-ammo--reloading", reloading);
+  hudAmmo.setAttribute(
+    "aria-label",
+    reloading ? `Rechargement ${Math.ceil(remainingMs / 1000)} secondes` : `${ammo} balles sur ${magazineSize}`
+  );
+  if (touchReloadBtn) {
+    touchReloadBtn.disabled = reloading || ammo >= magazineSize;
+    touchReloadBtn.classList.toggle("is-active", reloading);
+  }
 }
 
 function updateGrenadeHud() {
@@ -970,6 +1095,9 @@ weaponChoice.addEventListener("click", (event) => {
   const weapon = target.getAttribute("data-weapon");
   state.weapon = weapon;
   state.isAiming = false;
+  cancelReload();
+  ensureWeaponAmmo(weapon);
+  updateAmmoHud();
   touchAimBtn?.classList.remove("is-active");
   setActiveWeaponModel(weapon);
   weaponChoice.querySelectorAll("button").forEach((b) => b.classList.remove("active"));
@@ -992,12 +1120,18 @@ if (mobileControlsQuery.addEventListener) {
 } else if (mobileControlsQuery.addListener) {
   mobileControlsQuery.addListener(syncTouchControls);
 }
-initializeKeyBindingUi({ onBindingsChanged: updateGrenadeHud });
+initializeKeyBindingUi({
+  onBindingsChanged: () => {
+    updateGrenadeHud();
+    updateAmmoHud();
+  }
+});
 bindTouchControls({
   beginPrimaryFire,
   endPrimaryFire,
   getWeaponStats,
   jump,
+  reloadWeapon,
   resizeRendererToViewport,
   throwGrenade,
   togglePauseMenu,
@@ -1029,6 +1163,7 @@ bindKeyboardMouseControls({
   endPrimaryFire,
   endPrimaryFireFromMouseEvent,
   jump,
+  reloadWeapon,
   setPauseMenu,
   throwGrenade,
   togglePauseMenu
@@ -1317,6 +1452,7 @@ function animate() {
   const time = performance.now() * 0.001;
 
   updateZoomState();
+  updateReloadState();
   updateRespawnNotice();
   updateDeathScreen();
   camera.rotation.set(state.pitch, state.yaw, 0, "YXZ");
@@ -1381,6 +1517,7 @@ function animateViewModel(delta) {
     state.joined &&
     state.isAlive &&
     !state.pauseOpen &&
+    !isReloadingWeapon() &&
     state.isAiming &&
     (state.weapon === "ak47" || state.weapon === "shotgun") &&
     hasGameLookInput();
@@ -1483,6 +1620,7 @@ function animateViewModel(delta) {
 
   const isAk = state.weapon === "ak47";
   const isShotgun = state.weapon === "shotgun";
+  const reloadProgress = getReloadProgress();
   const rotXTarget = isAk ? 0.085 : 0.024;
   const yTarget = isAk ? 0.0 : 0.1;
   const xTarget = isShotgun ? 0 : 0.02; // Aligne parfaitement les modèles (origin -0.02) au centre
@@ -1511,12 +1649,37 @@ function animateViewModel(delta) {
   const idleRotY = -0.22 + s67 * bobRotY * bobIntensity;
   const adsRotY = 0 + s67 * bobRotY * bobIntensity * 0.35;
   viewModel.rotation.y = THREE.MathUtils.lerp(idleRotY, adsRotY, aimViewBlend);
+
+  if (reloadProgress > 0) {
+    const lift = Math.sin(reloadProgress * Math.PI);
+    const enter = THREE.MathUtils.smoothstep(reloadProgress, 0, 0.28);
+    const exit = 1 - THREE.MathUtils.smoothstep(reloadProgress, 0.72, 1);
+    const hold = Math.min(enter, exit);
+    const click = Math.sin(THREE.MathUtils.clamp((reloadProgress - 0.48) / 0.18, 0, 1) * Math.PI);
+    const side = isShotgun ? -1 : 1;
+
+    viewModel.position.x += side * (0.08 * hold + 0.018 * click);
+    viewModel.position.y += 0.24 * lift + 0.04 * hold;
+    viewModel.position.z += 0.12 * hold;
+    viewModel.rotation.x -= 0.48 * lift;
+    viewModel.rotation.y += side * (0.3 * hold);
+    viewModel.rotation.z += side * (0.34 * lift + 0.08 * click);
+  }
 }
 
 function shoot() {
   if (!state.isAlive) return;
   const stats = getWeaponStats();
   const now = performance.now();
+  updateReloadState();
+  if (!stats.melee) {
+    if (isReloadingWeapon()) return;
+    const ammo = ensureWeaponAmmo();
+    if (ammo <= 0) {
+      startReload(false);
+      return;
+    }
+  }
   const msBetweenShots = 1000 / stats.fireRate;
   if (now - state.lastShotAt < msBetweenShots) return;
   state.lastShotAt = now;
@@ -1555,6 +1718,8 @@ function shoot() {
     return;
   }
 
+  state.ammoByWeapon[state.weapon] = Math.max(0, ensureWeaponAmmo() - 1);
+  updateAmmoHud();
   impulseViewRecoilFromWeapon(stats);
 
   const right = new THREE.Vector3().crossVectors(camera.up, baseDirection).normalize();
@@ -1595,6 +1760,7 @@ function shoot() {
       })
     );
   }
+  if (ensureWeaponAmmo() <= 0) startReload(false);
 }
 
 function createThrownGrenadeMesh() {

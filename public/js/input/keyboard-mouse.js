@@ -19,6 +19,13 @@ export function bindKeyboardMouseControls(options) {
       }
       return;
     }
+    if (pressedKey === keyBindings.reload) {
+      if (state.joined && !state.pauseOpen && state.isAlive) {
+        e.preventDefault();
+        options.reloadWeapon();
+      }
+      return;
+    }
     state.keys.add(pressedKey);
     if (pressedKey === keyBindings.jump && state.joined && !state.pauseOpen && state.onGround) {
       options.jump();

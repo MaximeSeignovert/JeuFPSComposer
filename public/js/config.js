@@ -10,6 +10,7 @@ export const DEFAULT_KEY_BINDINGS = {
   sprint: "ShiftLeft",
   jump: "Space",
   grenade: "g",
+  reload: "r",
   pause: "Escape"
 };
 
@@ -21,6 +22,7 @@ export const KEY_BINDING_ROWS = [
   { id: "sprint", label: "Sprint" },
   { id: "jump", label: "Sauter" },
   { id: "grenade", label: "Grenade" },
+  { id: "reload", label: "Recharger" },
   { id: "pause", label: "Pause / menu" }
 ];
 
@@ -42,6 +44,8 @@ export const WEAPON_STATS = {
     damage: 12,
     range: 22,
     bulletSpeed: 120,
+    magazineSize: 5,
+    reloadMs: 1350,
     auto: false,
     zoomFov: BASE_FOV,
     viewRecoil: { z: 0.135, y: -0.02, rotX: 0.078, rotZ: 0.05 }
@@ -54,6 +58,8 @@ export const WEAPON_STATS = {
     damage: 20,
     range: 58,
     bulletSpeed: 145,
+    magazineSize: 20,
+    reloadMs: 1600,
     auto: true,
     zoomFov: BASE_FOV,
     viewRecoil: { z: 0.042, y: -0.006, rotX: 0.032, rotZ: 0.02 }
@@ -66,6 +72,8 @@ export const WEAPON_STATS = {
     damage: 100,
     range: 125,
     bulletSpeed: 210,
+    magazineSize: 1,
+    reloadMs: 1900,
     auto: false,
     zoomFov: 28,
     viewRecoil: { z: 0.158, y: -0.014, rotX: 0.068, rotZ: 0.028 }

@@ -10,7 +10,8 @@ import {
   touchInput,
   touchJumpBtn,
   touchMoveStick,
-  touchPauseBtn
+  touchPauseBtn,
+  touchReloadBtn
 } from "../dom.js";
 import { state } from "../state.js";
 import { syncFullscreenButton, toggleFullscreenMode } from "./fullscreen.js";
@@ -174,6 +175,7 @@ export function bindTouchControls(options) {
   });
   bindTouchButton(touchJumpBtn, options.jump);
   bindTouchButton(touchGrenadeBtn, options.throwGrenade);
+  bindTouchButton(touchReloadBtn, options.reloadWeapon);
   bindTouchButton(touchPauseBtn, () => {
     if (state.joined) options.togglePauseMenu();
   });
