@@ -705,9 +705,11 @@ function connect() {
       if (!msg.id) return;
       if (msg.id === state.playerId) return;
       const remotePlayer = ensureRemotePlayer(msg.id);
+      const shouldSnap = remotePlayer.alive === false && msg.alive !== false;
       remotePlayer.team = msg.team || remotePlayer.team || null;
-      applyRemoteSnapshot(remotePlayer, msg, false);
+      applyRemoteSnapshot(remotePlayer, msg, shouldSnap);
       setRemoteAliveVisual(remotePlayer.root, msg.alive !== false);
+      remotePlayer.alive = msg.alive !== false;
       if (msg.name || msg.team) {
         const nameTag = remotePlayer.root.userData.nameTag;
         const playerColor = colorFromPlayerId(msg.id);
@@ -921,13 +923,19 @@ function updatePlayerList(players) {
 
   players.forEach((p) => {
     if (!p.id || p.id === state.playerId) return;
+    const existingRemotePlayer = remoteMeshes.get(p.id);
     const remotePlayer = ensureRemotePlayer(p.id);
+    const shouldSnap =
+      !existingRemotePlayer ||
+      !remotePlayer.targetPosition ||
+      (remotePlayer.alive === false && p.alive !== false);
     remotePlayer.team = p.team || remotePlayer.team || null;
-    applyRemoteSnapshot(remotePlayer, p, true);
+    applyRemoteSnapshot(remotePlayer, p, shouldSnap);
     const playerColor = colorFromPlayerId(p.id);
     updateNameTagSprite(remotePlayer.root.userData.nameTag, p.name || "Player", playerColor);
     applyRemoteTeamStyle(remotePlayer.root, p.team, p.id);
     setRemoteAliveVisual(remotePlayer.root, p.alive !== false);
+    remotePlayer.alive = p.alive !== false;
   });
 
   const scoreboard = [...players].sort((a, b) => {

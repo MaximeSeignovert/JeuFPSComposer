@@ -32,6 +32,9 @@ const GRENADE_MAX_DAMAGE = 95;
 const GRENADE_PICKUP_RESPAWN_MS = 12000;
 const GRENADE_PICKUP_RADIUS = 2.2;
 const KNIFE_HIT_RANGE = 3.35;
+const PLAYER_UPDATE_MIN_INTERVAL_MS = 35;
+const PLAYER_UPDATE_MIN_MOVE_SQ = 0.0004;
+const PLAYER_UPDATE_MIN_ROTATION = 0.002;
 const WEAPON_DAMAGE_LIMITS = {
   shotgun: 12,
   sniper: 100,
@@ -116,6 +119,50 @@ function sendToRoom(roomId, data) {
       playerWs.send(payload);
     }
   });
+}
+
+function sendToRoomExcept(roomId, excludedPlayerId, data) {
+  const room = rooms.get(roomId);
+  if (!room) return;
+  const payload = JSON.stringify(data);
+  room.players.forEach((playerWs) => {
+    if (playerWs.meta?.id === excludedPlayerId) return;
+    if (playerWs.readyState === WebSocket.OPEN) {
+      playerWs.send(payload);
+    }
+  });
+}
+
+function sanitizePosition(position) {
+  if (
+    !position ||
+    !Number.isFinite(Number(position.x)) ||
+    !Number.isFinite(Number(position.y)) ||
+    !Number.isFinite(Number(position.z))
+  ) {
+    return null;
+  }
+  return {
+    x: Number(position.x),
+    y: Number(position.y),
+    z: Number(position.z)
+  };
+}
+
+function hasMeaningfulPlayerUpdate(ws, position, rotationY, now) {
+  const lastUpdateAt = Number(ws.meta.lastPlayerUpdateAt) || 0;
+  if (lastUpdateAt && now - lastUpdateAt < PLAYER_UPDATE_MIN_INTERVAL_MS) return false;
+
+  const previous = ws.meta.lastPosition;
+  const previousRotationY = Number(ws.meta.rotationY) || 0;
+  if (!previous) return true;
+
+  const dx = position.x - (Number(previous.x) || 0);
+  const dy = position.y - (Number(previous.y) || 0);
+  const dz = position.z - (Number(previous.z) || 0);
+  const moveSq = dx * dx + dy * dy + dz * dz;
+  const rotationDelta = Math.abs(Math.atan2(Math.sin(rotationY - previousRotationY), Math.cos(rotationY - previousRotationY)));
+  return moveSq >= PLAYER_UPDATE_MIN_MOVE_SQ || rotationDelta >= PLAYER_UPDATE_MIN_ROTATION;
 }
 
 function getSpawnPosition() {
@@ -480,7 +527,8 @@ wss.on("connection", (ws) => {
     deaths: 0,
     respawnTimer: null,
     invulnerableUntil: 0,
-    grenades: 0
+    grenades: 0,
+    lastPlayerUpdateAt: 0
   };
 
   ws.send(
@@ -562,9 +610,16 @@ wss.on("connection", (ws) => {
 
     if (msg.type === "player:update" && ws.meta.roomId) {
       if (!ws.meta.alive) return;
-      ws.meta.lastPosition = msg.position;
-      ws.meta.rotationY = Number(msg.rotationY) || 0;
-      sendToRoom(ws.meta.roomId, {
+      const position = sanitizePosition(msg.position);
+      if (!position) return;
+      const rotationY = Number(msg.rotationY) || 0;
+      const now = Date.now();
+      if (!hasMeaningfulPlayerUpdate(ws, position, rotationY, now)) return;
+
+      ws.meta.lastPosition = position;
+      ws.meta.rotationY = rotationY;
+      ws.meta.lastPlayerUpdateAt = now;
+      sendToRoomExcept(ws.meta.roomId, ws.meta.id, {
         type: "player:update",
         id: ws.meta.id,
         name: ws.meta.name,
@@ -572,8 +627,8 @@ wss.on("connection", (ws) => {
         weapon: ws.meta.weapon,
         health: ws.meta.health,
         alive: ws.meta.alive,
-        position: msg.position,
-        rotationY: msg.rotationY
+        position,
+        rotationY
       });
       return;
     }
