@@ -2,6 +2,7 @@
 import {
   BASE_FOV,
   GRENADE_CONFIG,
+  KNIFE_MOVE_SPEED_MULTIPLIER,
   MAP_HALF_SIZE,
   REMOTE_INTERP_SPEED,
   VIEW_RECOIL_BOB_SUPPRESS_K,
@@ -959,7 +960,8 @@ function updateMovement(delta) {
   dir.normalize();
   const side = new THREE.Vector3(-dir.z, 0, dir.x).normalize();
   const isSprinting = state.keys.has(kb.sprint) || touchInput.move.strength > 0.86;
-  const speedMultiplier = isSprinting ? state.sprintMultiplier : 1;
+  const weaponSpeedMultiplier = state.weapon === "knife" ? KNIFE_MOVE_SPEED_MULTIPLIER : 1;
+  const speedMultiplier = (isSprinting ? state.sprintMultiplier : 1) * weaponSpeedMultiplier;
   const currentMoveSpeed = state.moveSpeed * speedMultiplier;
 
   const targetVelocity = new THREE.Vector3()

@@ -31,10 +31,10 @@ const GRENADE_BLAST_RADIUS = 8.5;
 const GRENADE_MAX_DAMAGE = 95;
 const GRENADE_PICKUP_RESPAWN_MS = 12000;
 const GRENADE_PICKUP_RADIUS = 2.2;
-const KNIFE_HIT_RANGE = 2.8;
+const KNIFE_HIT_RANGE = 3.35;
 const WEAPON_DAMAGE_LIMITS = {
   shotgun: 12,
-  sniper: 92,
+  sniper: 100,
   ak47: 20,
   knife: 100
 };

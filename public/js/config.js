@@ -29,6 +29,7 @@ export const REMOTE_INTERP_SPEED = 12;
 export const VIEW_RECOIL_DECAY = 15;
 export const VIEW_RECOIL_BOB_SUPPRESS_K = 0.48;
 export const VIEW_RECOIL_NORM_CAP = 0.16;
+export const KNIFE_MOVE_SPEED_MULTIPLIER = 1.12;
 
 export const WEAPON_STATS = {
   shotgun: {
@@ -62,7 +63,7 @@ export const WEAPON_STATS = {
     fireRate: 0.72,
     pellets: 1,
     spread: 0.002,
-    damage: 92,
+    damage: 100,
     range: 125,
     bulletSpeed: 210,
     auto: false,
@@ -75,7 +76,7 @@ export const WEAPON_STATS = {
     pellets: 1,
     spread: 0,
     damage: 100,
-    range: 2.15,
+    range: 2.75,
     bulletSpeed: 0,
     auto: false,
     melee: true,
