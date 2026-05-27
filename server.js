@@ -365,6 +365,7 @@ function killDevBotAndScheduleRespawn(room, killerWs = null, killerWeapon = null
   sendToRoom(room.id, {
     type: "player:died",
     id: room.devBot.id,
+    victimName: room.devBot.name,
     killerId: killerWs?.meta?.id || null,
     killerName: killerWs?.meta?.name || null,
     killerWeapon: killerWeapon || killerWs?.meta?.weapon || null
@@ -420,6 +421,7 @@ function killAndScheduleRespawn(victimWs, killerWs = null, killerWeapon = null) 
   sendToRoom(room.id, {
     type: "player:died",
     id: victimWs.meta.id,
+    victimName: victimWs.meta.name,
     killerId: killerWs?.meta?.id || null,
     killerName: killerWs?.meta?.name || null,
     killerWeapon: killerWeapon || killerWs?.meta?.weapon || null

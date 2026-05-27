@@ -7,6 +7,7 @@ export const pauseMenuOverlay = document.getElementById("pauseMenuOverlay");
 export const pauseMenu = document.getElementById("pauseMenu");
 export const resumeBtn = document.getElementById("resumeBtn");
 export const hud = document.getElementById("hud");
+export const killFeed = document.getElementById("killFeed");
 export const crosshair = document.getElementById("crosshair");
 export const damageOverlay = document.getElementById("damageOverlay");
 export const hitmarker = document.getElementById("hitmarker");

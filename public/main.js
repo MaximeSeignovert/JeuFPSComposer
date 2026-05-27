@@ -24,6 +24,7 @@ import {
   hudGrenade,
   hudHealth,
   hudHealthFill,
+  killFeed,
   menu,
   mobileControlsQuery,
   nameInput,
@@ -480,6 +481,24 @@ function getDeathWeaponLabel(weapon) {
   return WEAPON_STATS[weapon]?.label || DEATH_WEAPON_LABELS[weapon] || "Inconnue";
 }
 
+function normalizeWeaponKey(weapon) {
+  return WEAPON_STATS[weapon] || weapon === "grenade" ? weapon : "ak47";
+}
+
+function createWeaponIcon(weapon, className) {
+  const weaponKey = normalizeWeaponKey(weapon);
+  const sourceSvg =
+    weaponKey === "grenade"
+      ? document.querySelector("#hudGrenade svg")
+      : weaponChoice?.querySelector(`button[data-weapon="${weaponKey}"] svg`);
+  const icon = sourceSvg?.cloneNode(true);
+  if (!icon) return null;
+  icon.removeAttribute("width");
+  icon.removeAttribute("height");
+  icon.classList.add(className);
+  return icon;
+}
+
 function updateDeathWeaponIcon(weapon) {
   if (!deathKillerWeaponIcon) return;
   if (renderedDeathWeapon === weapon) return;
@@ -487,16 +506,37 @@ function updateDeathWeaponIcon(weapon) {
   deathKillerWeaponIcon.replaceChildren();
   deathKillerWeaponIcon.className = `death-weapon__icon death-weapon__icon--${weapon || "unknown"}`;
 
-  const sourceSvg =
-    weapon === "grenade"
-      ? document.querySelector("#hudGrenade svg")
-      : weaponChoice?.querySelector(`button[data-weapon="${weapon}"] svg`);
-  const icon = sourceSvg?.cloneNode(true);
+  const icon = createWeaponIcon(weapon, "death-weapon__svg");
   if (!icon) return;
-  icon.removeAttribute("width");
-  icon.removeAttribute("height");
-  icon.classList.add("death-weapon__svg");
   deathKillerWeaponIcon.append(icon);
+}
+
+function addKillFeedEntry({ killerName, victimName, weapon }) {
+  if (!killFeed || !killerName || !victimName) return;
+  const weaponKey = normalizeWeaponKey(weapon);
+
+  const item = document.createElement("div");
+  item.className = `kill-feed__item kill-feed__item--${weaponKey}`;
+
+  const killer = document.createElement("span");
+  killer.className = "kill-feed__name kill-feed__name--killer";
+  killer.textContent = killerName;
+
+  const iconWrap = document.createElement("span");
+  iconWrap.className = "kill-feed__weapon";
+  iconWrap.setAttribute("aria-label", getDeathWeaponLabel(weaponKey));
+  const icon = createWeaponIcon(weaponKey, "kill-feed__svg");
+  if (icon) iconWrap.append(icon);
+
+  const victim = document.createElement("span");
+  victim.className = "kill-feed__name kill-feed__name--victim";
+  victim.textContent = victimName;
+
+  item.append(killer, iconWrap, victim);
+  killFeed.prepend(item);
+
+  window.setTimeout(() => item.classList.add("kill-feed__item--leaving"), 2400);
+  window.setTimeout(() => item.remove(), 3000);
 }
 
 function updateRespawnNotice() {
@@ -695,6 +735,13 @@ function connect() {
     }
 
     if (msg.type === "player:died") {
+      if (msg.killerId) {
+        addKillFeedEntry({
+          killerName: String(msg.killerName || "Inconnu"),
+          victimName: String(msg.victimName || "Inconnu"),
+          weapon: String(msg.killerWeapon || "")
+        });
+      }
       if (msg.id === state.playerId) {
         state.deathKillerId = msg.killerId || null;
         state.deathKillerName = String(msg.killerName || "Inconnu");
