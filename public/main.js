@@ -16,6 +16,8 @@ import {
   damageOverlay,
   deathCountdown,
   deathKillerName,
+  deathKillerWeapon,
+  deathKillerWeaponIcon,
   deathScreen,
   hitmarker,
   hud,
@@ -63,6 +65,10 @@ import { createSceneSetup } from "./js/world/scene.js";
 let aimViewBlend = 0;
 const KNIFE_ATTACK_DURATION = 0.34;
 let knifeAttackTime = 0;
+let renderedDeathWeapon = null;
+const DEATH_WEAPON_LABELS = {
+  grenade: "Grenade"
+};
 
 nameInput.value = loadPlayerName();
 nameInput.addEventListener("input", () => {
@@ -464,8 +470,33 @@ function setLocalAlive(alive) {
   }
   state.deathKillerId = null;
   state.deathKillerName = "";
+  state.deathKillerWeapon = "";
+  renderedDeathWeapon = null;
   deathScreen?.classList.add("hidden");
   syncTouchControls();
+}
+
+function getDeathWeaponLabel(weapon) {
+  return WEAPON_STATS[weapon]?.label || DEATH_WEAPON_LABELS[weapon] || "Inconnue";
+}
+
+function updateDeathWeaponIcon(weapon) {
+  if (!deathKillerWeaponIcon) return;
+  if (renderedDeathWeapon === weapon) return;
+  renderedDeathWeapon = weapon;
+  deathKillerWeaponIcon.replaceChildren();
+  deathKillerWeaponIcon.className = `death-weapon__icon death-weapon__icon--${weapon || "unknown"}`;
+
+  const sourceSvg =
+    weapon === "grenade"
+      ? document.querySelector("#hudGrenade svg")
+      : weaponChoice?.querySelector(`button[data-weapon="${weapon}"] svg`);
+  const icon = sourceSvg?.cloneNode(true);
+  if (!icon) return;
+  icon.removeAttribute("width");
+  icon.removeAttribute("height");
+  icon.classList.add("death-weapon__svg");
+  deathKillerWeaponIcon.append(icon);
 }
 
 function updateRespawnNotice() {
@@ -486,6 +517,10 @@ function updateDeathScreen() {
   if (deathKillerName) {
     deathKillerName.textContent = state.deathKillerName || "Inconnu";
   }
+  if (deathKillerWeapon) {
+    deathKillerWeapon.textContent = getDeathWeaponLabel(state.deathKillerWeapon);
+  }
+  updateDeathWeaponIcon(state.deathKillerWeapon);
   if (deathCountdown) {
     deathCountdown.textContent = `Respawn dans ${seconds}s...`;
   }
@@ -663,6 +698,7 @@ function connect() {
       if (msg.id === state.playerId) {
         state.deathKillerId = msg.killerId || null;
         state.deathKillerName = String(msg.killerName || "Inconnu");
+        state.deathKillerWeapon = String(msg.killerWeapon || "");
         setLocalAlive(false);
         state.respawnUntil = performance.now() + state.respawnDelayMs;
       } else {

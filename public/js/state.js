@@ -31,6 +31,7 @@ export const state = {
   respawnDelayMs: 3200,
   deathKillerId: null,
   deathKillerName: "",
+  deathKillerWeapon: "",
   joined: false,
   pauseOpen: false,
   grenadeSequence: 0,

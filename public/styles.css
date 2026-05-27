@@ -1002,6 +1002,50 @@ button.active {
   font-weight: 600;
 }
 
+.death-weapon {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 64px;
+  margin: 4px 0 8px;
+  padding: 10px 16px 10px 12px;
+  border: 1px solid rgba(255, 231, 231, 0.28);
+  border-radius: 8px;
+  background: rgba(12, 8, 10, 0.34);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.26);
+}
+
+.death-weapon__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 68px;
+  height: 46px;
+  color: #ffe7e7;
+  filter: drop-shadow(0 0 10px rgba(255, 210, 210, 0.35));
+}
+
+.death-weapon__svg {
+  display: block;
+  width: 64px;
+  height: 38px;
+}
+
+.death-weapon__icon--grenade .death-weapon__svg {
+  width: 34px;
+  height: 42px;
+}
+
+.death-weapon__label {
+  font-size: clamp(16px, 1.8vw, 22px);
+  font-weight: 600;
+  line-height: 1.15;
+}
+
+.death-weapon__label strong {
+  font-weight: 900;
+}
+
 .touch-controls {
   position: fixed;
   inset: 0;

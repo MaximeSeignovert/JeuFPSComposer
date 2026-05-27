@@ -227,11 +227,11 @@ function applyGrenadeExplosion(room, grenade, position) {
 
   const killerWs = room.players.get(grenade.ownerId) || null;
   victimsToKill.forEach((victimWs) => {
-    killAndScheduleRespawn(victimWs, killerWs);
+    killAndScheduleRespawn(victimWs, killerWs, "grenade");
   });
 
   if (ENABLE_DEV_BOT && room.devBot?.alive && room.devBot.health <= 0) {
-    killDevBotAndScheduleRespawn(room, killerWs);
+    killDevBotAndScheduleRespawn(room, killerWs, "grenade");
   } else if (victimsToKill.length === 0 && damagedSomeone) {
     sendRoomPlayers(room.id);
   }
@@ -350,7 +350,7 @@ function stopDevBot(room) {
   room.devBot.timer = null;
 }
 
-function killDevBotAndScheduleRespawn(room, killerWs = null) {
+function killDevBotAndScheduleRespawn(room, killerWs = null, killerWeapon = null) {
   if (!ENABLE_DEV_BOT || !room?.devBot) return;
   if (!room.devBot.alive) return;
 
@@ -366,7 +366,8 @@ function killDevBotAndScheduleRespawn(room, killerWs = null) {
     type: "player:died",
     id: room.devBot.id,
     killerId: killerWs?.meta?.id || null,
-    killerName: killerWs?.meta?.name || null
+    killerName: killerWs?.meta?.name || null,
+    killerWeapon: killerWeapon || killerWs?.meta?.weapon || null
   });
   sendRoomPlayers(room.id);
 
@@ -400,7 +401,7 @@ function killDevBotAndScheduleRespawn(room, killerWs = null) {
   }, RESPAWN_DELAY_MS);
 }
 
-function killAndScheduleRespawn(victimWs, killerWs = null) {
+function killAndScheduleRespawn(victimWs, killerWs = null, killerWeapon = null) {
   if (!victimWs?.meta?.roomId) return;
   const room = rooms.get(victimWs.meta.roomId);
   if (!room) return;
@@ -420,7 +421,8 @@ function killAndScheduleRespawn(victimWs, killerWs = null) {
     type: "player:died",
     id: victimWs.meta.id,
     killerId: killerWs?.meta?.id || null,
-    killerName: killerWs?.meta?.name || null
+    killerName: killerWs?.meta?.name || null,
+    killerWeapon: killerWeapon || killerWs?.meta?.weapon || null
   });
   sendRoomPlayers(room.id);
 
