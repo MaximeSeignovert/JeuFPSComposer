@@ -63,6 +63,7 @@ import {
 } from "./js/players/appearance.js";
 import { state } from "./js/state.js";
 import { createViewModel } from "./js/weapons.js";
+import { initPhysics } from "./js/physics/rapier-physics.js";
 import { MAP_LAYOUT } from "./js/world/map-layout.js";
 import { createSceneSetup } from "./js/world/scene.js";
 
@@ -105,21 +106,15 @@ const floor = new THREE.Mesh(
 floor.rotation.x = -Math.PI / 2;
 scene.add(floor);
 const worldColliders = [floor];
-const staticBlockColliders = [];
 const playerCollisionRadius = 0.34;
-const blockStandTolerance = 0.08;
-const collisionEpsilon = 0.001;
 const mapAnimators = [];
 const jumpPads = [];
 const grenadePickups = new Map();
 const grenadePickupMeshes = new Map();
 
-function addStaticWorldMesh(mesh, includePhysics = true) {
+function addStaticWorldMesh(mesh) {
   scene.add(mesh);
   worldColliders.push(mesh);
-  if (includePhysics) {
-    staticBlockColliders.push(new THREE.Box3().setFromObject(mesh));
-  }
 }
 
 const mapConfig = MAP_LAYOUT;
@@ -137,8 +132,7 @@ platform.position.set(
   mapConfig.platform.topY - mapConfig.platform.thickness * 0.5,
   mapConfig.platform.z
 );
-// Keep platform out of lateral blockers to avoid sticking while walking on top.
-addStaticWorldMesh(platform, false);
+addStaticWorldMesh(platform);
 
 const rampRise = mapConfig.ramp.topY - mapConfig.ramp.baseY;
 const rampAngle = Math.atan2(rampRise, mapConfig.ramp.width);
@@ -155,12 +149,12 @@ leftRamp.position.set(
   0
 );
 leftRamp.rotation.z = rampAngle;
-addStaticWorldMesh(leftRamp, false);
+addStaticWorldMesh(leftRamp);
 
 const rightRamp = leftRamp.clone();
 rightRamp.position.x = mapConfig.platform.width / 2 + mapConfig.ramp.width / 2;
 rightRamp.rotation.z = -leftRamp.rotation.z;
-addStaticWorldMesh(rightRamp, false);
+addStaticWorldMesh(rightRamp);
 
 const coverMaterial = new THREE.MeshStandardMaterial({
   color: mapConfig.coverMaterial.color,
@@ -601,6 +595,7 @@ const explodedGrenadeIds = new Set();
 const raycaster = new THREE.Raycaster();
 
 const clock = new THREE.Clock();
+let physics = null;
 let lastNetworkSend = 0;
 const smoothedMoveVelocity = new THREE.Vector3();
 let hitmarkerTimer = null;
@@ -1170,11 +1165,10 @@ bindKeyboardMouseControls({
 });
 
 function updateMovement(delta) {
-  if (!state.joined || state.pauseOpen || !state.isAlive) {
+  if (!physics || !state.joined || state.pauseOpen || !state.isAlive) {
     smoothedMoveVelocity.set(0, 0, 0);
     return;
   }
-  const previousPos = camera.position.clone();
   const kb = keyBindings;
   const keyboardFwd = Number(state.keys.has(kb.forward)) - Number(state.keys.has(kb.back));
   const keyboardRight = Number(state.keys.has(kb.right)) - Number(state.keys.has(kb.left));
@@ -1203,21 +1197,22 @@ function updateMovement(delta) {
   if (hasInput) smoothedMoveVelocity.clampLength(0, currentMoveSpeed);
 
   state.verticalVelocity -= state.gravity * delta;
-  camera.position.y += state.verticalVelocity * delta;
+  const result = physics.movePlayer({
+    horizontalVelocity: smoothedMoveVelocity,
+    verticalVelocity: state.verticalVelocity,
+    delta
+  });
+  camera.position.set(result.cameraPosition.x, result.cameraPosition.y, result.cameraPosition.z);
 
-  const feetY = camera.position.y - state.playerHeight;
-  const groundHeight = getGroundHeightAt(camera.position.x, camera.position.z, feetY);
-  const minY = state.playerHeight + groundHeight;
-  if (camera.position.y <= minY) {
-    camera.position.y = minY;
+  if (result.hitCeiling && state.verticalVelocity > 0) {
+    state.verticalVelocity = 0;
+  }
+  if (result.grounded && state.verticalVelocity <= 0) {
     state.verticalVelocity = 0;
     state.onGround = true;
+  } else {
+    state.onGround = false;
   }
-  resolveHorizontalMovement(previousPos, delta);
-
-  const lim = MAP_HALF_SIZE;
-  camera.position.x = THREE.MathUtils.clamp(camera.position.x, -lim, lim);
-  camera.position.z = THREE.MathUtils.clamp(camera.position.z, -lim, lim);
   applyJumpPads();
 
   const horizontalSpeed = smoothedMoveVelocity.length();
@@ -1241,154 +1236,10 @@ function applyJumpPads() {
   }
 }
 
-function resolveHorizontalMovement(previousPos, delta) {
-  const playerBottom = camera.position.y - state.playerHeight;
-  const playerTop = camera.position.y + 0.25;
-  const desiredX = previousPos.x + smoothedMoveVelocity.x * delta;
-  const desiredZ = previousPos.z + smoothedMoveVelocity.z * delta;
-
-  camera.position.x = desiredX;
-  camera.position.z = previousPos.z;
-  if (isCollidingAt(camera.position.x, camera.position.z, playerBottom, playerTop)) {
-    camera.position.x = previousPos.x;
-    smoothedMoveVelocity.x = 0;
-  }
-
-  camera.position.z = desiredZ;
-  if (isCollidingAt(camera.position.x, camera.position.z, playerBottom, playerTop)) {
-    camera.position.z = previousPos.z;
-    smoothedMoveVelocity.z = 0;
-  }
-
-  resolveHorizontalPenetration(playerBottom, playerTop);
-}
-
-function isCollidingAt(x, z, playerBottom, playerTop) {
-  for (const box of staticBlockColliders) {
-    if (!isBlockLateralCollider(box, playerBottom, playerTop)) continue;
-    const closestX = THREE.MathUtils.clamp(x, box.min.x, box.max.x);
-    const closestZ = THREE.MathUtils.clamp(z, box.min.z, box.max.z);
-    const deltaX = x - closestX;
-    const deltaZ = z - closestZ;
-    const distSq = deltaX * deltaX + deltaZ * deltaZ;
-    if (distSq < playerCollisionRadius * playerCollisionRadius) return true;
-  }
-  return false;
-}
-
-function isBlockLateralCollider(box, playerBottom, playerTop) {
-  if (playerTop <= box.min.y || playerBottom >= box.max.y) return false;
-  // Only ignore side walls near the top while landing or standing. While rising,
-  // the player must still collide with the block side instead of slipping inside it.
-  if (state.verticalVelocity <= 0 && playerBottom >= box.max.y - blockStandTolerance) return false;
-  return true;
-}
-
-function resolveHorizontalPenetration(playerBottom, playerTop) {
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    let moved = false;
-    for (const box of staticBlockColliders) {
-      if (!isBlockLateralCollider(box, playerBottom, playerTop)) continue;
-      const push = getCircleBoxPush(camera.position.x, camera.position.z, box);
-      if (!push) continue;
-      camera.position.x += push.x;
-      camera.position.z += push.z;
-      if (push.x !== 0) smoothedMoveVelocity.x = 0;
-      if (push.z !== 0) smoothedMoveVelocity.z = 0;
-      moved = true;
-    }
-    if (!moved) break;
-  }
-}
-
-function getCircleBoxPush(x, z, box) {
-  const closestX = THREE.MathUtils.clamp(x, box.min.x, box.max.x);
-  const closestZ = THREE.MathUtils.clamp(z, box.min.z, box.max.z);
-  const deltaX = x - closestX;
-  const deltaZ = z - closestZ;
-  const distSq = deltaX * deltaX + deltaZ * deltaZ;
-  const radiusSq = playerCollisionRadius * playerCollisionRadius;
-  if (distSq >= radiusSq) return null;
-
-  if (distSq > 0.000001) {
-    const dist = Math.sqrt(distSq);
-    const pushDistance = playerCollisionRadius - dist + collisionEpsilon;
-    return {
-      x: (deltaX / dist) * pushDistance,
-      z: (deltaZ / dist) * pushDistance
-    };
-  }
-
-  const toLeft = x - box.min.x;
-  const toRight = box.max.x - x;
-  const toBack = z - box.min.z;
-  const toFront = box.max.z - z;
-  const minDistance = Math.min(toLeft, toRight, toBack, toFront);
-  if (minDistance === toLeft) return { x: -(toLeft + playerCollisionRadius + collisionEpsilon), z: 0 };
-  if (minDistance === toRight) return { x: toRight + playerCollisionRadius + collisionEpsilon, z: 0 };
-  if (minDistance === toBack) return { x: 0, z: -(toBack + playerCollisionRadius + collisionEpsilon) };
-  return { x: 0, z: toFront + playerCollisionRadius + collisionEpsilon };
-}
-
-function getGroundHeightAt(x, z, feetY = 0) {
-  const rampSnapTolerance = 0.2;
-  const platformSnapTolerance = 0.35;
-  const blockSnapTolerance = 0.28;
-  const halfPlatformW = mapConfig.platform.width / 2;
-  const halfPlatformD = mapConfig.platform.depth / 2;
-  const halfRampD = mapConfig.ramp.depth / 2;
-  const halfRampW = mapConfig.ramp.width / 2;
-  let bestGround = 0;
-
-  if (Math.abs(x) <= halfPlatformW && Math.abs(z) <= halfPlatformD) {
-    if (feetY >= mapConfig.platform.topY - platformSnapTolerance) {
-      bestGround = Math.max(bestGround, mapConfig.platform.topY);
-    }
-  }
-
-  const leftCenterX = -(halfPlatformW + halfRampW);
-  if (x >= leftCenterX - halfRampW && x <= leftCenterX + halfRampW && Math.abs(z) <= halfRampD) {
-    const localX = x - (leftCenterX - halfRampW);
-    const rampHeight = THREE.MathUtils.clamp(
-      (localX / mapConfig.ramp.width) * mapConfig.ramp.topY,
-      mapConfig.ramp.baseY,
-      mapConfig.ramp.topY
-    );
-    if (feetY >= rampHeight - rampSnapTolerance) {
-      bestGround = Math.max(bestGround, rampHeight);
-    }
-  }
-
-  const rightCenterX = halfPlatformW + halfRampW;
-  if (
-    x >= rightCenterX - halfRampW &&
-    x <= rightCenterX + halfRampW &&
-    Math.abs(z) <= halfRampD
-  ) {
-    const localX = rightCenterX + halfRampW - x;
-    const rampHeight = THREE.MathUtils.clamp(
-      (localX / mapConfig.ramp.width) * mapConfig.ramp.topY,
-      mapConfig.ramp.baseY,
-      mapConfig.ramp.topY
-    );
-    if (feetY >= rampHeight - rampSnapTolerance) {
-      bestGround = Math.max(bestGround, rampHeight);
-    }
-  }
-
-  for (const box of staticBlockColliders) {
-    if (x < box.min.x || x > box.max.x || z < box.min.z || z > box.max.z) continue;
-    if (feetY >= box.max.y - blockSnapTolerance) {
-      bestGround = Math.max(bestGround, box.max.y);
-    }
-  }
-
-  return bestGround;
-}
-
 function findSafeSpawnPosition(spawn) {
   const fallback = {
     x: Number(spawn?.x) || 0,
+    y: Number(spawn?.y) || 0,
     z: Number(spawn?.z) || 0
   };
   const maxBound = MAP_HALF_SIZE - playerCollisionRadius - 0.2;
@@ -1396,10 +1247,8 @@ function findSafeSpawnPosition(spawn) {
   fallback.z = THREE.MathUtils.clamp(fallback.z, -maxBound, maxBound);
 
   const isSafeAt = (x, z) => {
-    const ground = getGroundHeightAt(x, z);
-    const playerBottom = ground;
-    const playerTop = ground + state.playerHeight + 0.25;
-    return !isCollidingAt(x, z, playerBottom, playerTop);
+    if (!physics) return true;
+    return physics.isPlayerPositionFree({ x, y: fallback.y, z });
   };
 
   if (isSafeAt(fallback.x, fallback.z)) return fallback;
@@ -1412,7 +1261,7 @@ function findSafeSpawnPosition(spawn) {
       const angle = (i / angleSteps) * Math.PI * 2;
       const x = THREE.MathUtils.clamp(fallback.x + Math.cos(angle) * radius, -maxBound, maxBound);
       const z = THREE.MathUtils.clamp(fallback.z + Math.sin(angle) * radius, -maxBound, maxBound);
-      if (isSafeAt(x, z)) return { x, z };
+      if (isSafeAt(x, z)) return { x, y: fallback.y, z };
     }
   }
 
@@ -1421,8 +1270,13 @@ function findSafeSpawnPosition(spawn) {
 
 function applyLocalSpawn(spawn) {
   const safe = findSafeSpawnPosition(spawn);
-  const ground = getGroundHeightAt(safe.x, safe.z);
-  camera.position.set(safe.x, state.playerHeight + ground, safe.z);
+  physics?.setPlayerPosition(safe);
+  const cameraPos = physics?.getPlayerCameraPosition() || {
+    x: safe.x,
+    y: safe.y + state.playerHeight,
+    z: safe.z
+  };
+  camera.position.set(cameraPos.x, cameraPos.y, cameraPos.z);
   state.verticalVelocity = 0;
   state.onGround = true;
 }
@@ -1828,16 +1682,23 @@ function spawnThrownGrenade(grenadeData) {
     ownerId: grenadeData.ownerId || null,
     mesh,
     trail,
-    velocity: direction.multiplyScalar(Number(grenadeData.speed) || GRENADE_CONFIG.throwSpeed),
+    lastPosition: mesh.position.clone(),
     ageMs: 0,
     fuseMs: Number(grenadeData.fuseMs) || GRENADE_CONFIG.fuseMs
   };
+  physics?.spawnGrenade({
+    id: grenade.id,
+    origin: mesh.position,
+    direction,
+    speed: Number(grenadeData.speed) || GRENADE_CONFIG.throwSpeed
+  });
   activeGrenades.set(grenade.id, grenade);
   return grenade;
 }
 
 function disposeGrenade(grenade) {
   if (!grenade) return;
+  physics?.disposeGrenade(grenade.id);
   scene.remove(grenade.mesh);
   scene.remove(grenade.trail);
   grenade.mesh.traverse((child) => {
@@ -1846,100 +1707,6 @@ function disposeGrenade(grenade) {
   });
   grenade.trail.geometry.dispose();
   grenade.trail.material.dispose();
-}
-
-function resolveGrenadeBlockCollisions(position, velocity) {
-  const radius = GRENADE_CONFIG.radius;
-
-  for (const box of staticBlockColliders) {
-    const closest = new THREE.Vector3(
-      THREE.MathUtils.clamp(position.x, box.min.x, box.max.x),
-      THREE.MathUtils.clamp(position.y, box.min.y, box.max.y),
-      THREE.MathUtils.clamp(position.z, box.min.z, box.max.z)
-    );
-    const delta = position.clone().sub(closest);
-    const distSq = delta.lengthSq();
-    if (distSq >= radius * radius) continue;
-
-    let normal;
-    let distance = Math.sqrt(distSq);
-    if (distance > 0.0001) {
-      normal = delta.multiplyScalar(1 / distance);
-    } else {
-      const center = box.getCenter(new THREE.Vector3());
-      const offset = position.clone().sub(center);
-      const absX = Math.abs(offset.x);
-      const absY = Math.abs(offset.y);
-      const absZ = Math.abs(offset.z);
-      if (absX >= absY && absX >= absZ) {
-        normal = new THREE.Vector3(Math.sign(offset.x) || 1, 0, 0);
-      } else if (absY >= absX && absY >= absZ) {
-        normal = new THREE.Vector3(0, Math.sign(offset.y) || 1, 0);
-      } else {
-        normal = new THREE.Vector3(0, 0, Math.sign(offset.z) || 1);
-      }
-      distance = 0;
-    }
-
-    position.addScaledVector(normal, radius - distance + 0.002);
-    const velocityAlongNormal = velocity.dot(normal);
-    if (velocityAlongNormal < 0) {
-      velocity.addScaledVector(normal, -(1 + GRENADE_CONFIG.bounceDamping) * velocityAlongNormal);
-      velocity.multiplyScalar(0.985);
-    }
-  }
-}
-
-function simulateGrenade(grenade, delta) {
-  let remaining = delta;
-  const timeStep = 1 / 120;
-  const maxBound = MAP_HALF_SIZE - GRENADE_CONFIG.radius;
-
-  while (remaining > 0) {
-    const step = Math.min(timeStep, remaining);
-    remaining -= step;
-
-    grenade.velocity.y -= GRENADE_CONFIG.gravity * step;
-    const previous = grenade.mesh.position.clone();
-    grenade.mesh.position.addScaledVector(grenade.velocity, step);
-
-    if (grenade.mesh.position.x < -maxBound || grenade.mesh.position.x > maxBound) {
-      grenade.mesh.position.x = THREE.MathUtils.clamp(grenade.mesh.position.x, -maxBound, maxBound);
-      grenade.velocity.x *= -GRENADE_CONFIG.bounceDamping;
-    }
-
-    if (grenade.mesh.position.z < -maxBound || grenade.mesh.position.z > maxBound) {
-      grenade.mesh.position.z = THREE.MathUtils.clamp(grenade.mesh.position.z, -maxBound, maxBound);
-      grenade.velocity.z *= -GRENADE_CONFIG.bounceDamping;
-    }
-
-    resolveGrenadeBlockCollisions(grenade.mesh.position, grenade.velocity);
-
-    const groundHeight = getGroundHeightAt(
-      grenade.mesh.position.x,
-      grenade.mesh.position.z,
-      grenade.mesh.position.y - GRENADE_CONFIG.radius
-    );
-    const minY = groundHeight + GRENADE_CONFIG.radius;
-    if (grenade.mesh.position.y <= minY) {
-      grenade.mesh.position.y = minY;
-      if (Math.abs(grenade.velocity.y) > GRENADE_CONFIG.minVerticalBounce) {
-        grenade.velocity.y = Math.abs(grenade.velocity.y) * GRENADE_CONFIG.bounceDamping;
-      } else {
-        grenade.velocity.y = 0;
-      }
-      grenade.velocity.x *= GRENADE_CONFIG.friction;
-      grenade.velocity.z *= GRENADE_CONFIG.friction;
-      if (Math.hypot(grenade.velocity.x, grenade.velocity.z) < GRENADE_CONFIG.minHorizontalSpeed) {
-        grenade.velocity.x = 0;
-        grenade.velocity.z = 0;
-      }
-    }
-
-    grenade.mesh.rotation.x += step * (grenade.velocity.length() * 0.7 + 2.8);
-    grenade.mesh.rotation.z += step * 4.2;
-    grenade.trail.geometry.setFromPoints([previous, grenade.mesh.position.clone()]);
-  }
 }
 
 function createExplosionEffect(position, radius) {
@@ -2011,9 +1778,17 @@ function updateExplosionEffects(delta) {
 function updateGrenades(delta, time) {
   updateGrenadePickupVisuals(time);
   tryPickupNearbyGrenade();
+  physics?.step(delta);
 
   activeGrenades.forEach((grenade, grenadeId) => {
-    simulateGrenade(grenade, delta);
+    const transform = physics?.getGrenadeTransform(grenadeId);
+    if (transform) {
+      const previous = grenade.lastPosition?.clone() || grenade.mesh.position.clone();
+      grenade.mesh.position.set(transform.position.x, transform.position.y, transform.position.z);
+      grenade.mesh.quaternion.set(transform.rotation.x, transform.rotation.y, transform.rotation.z, transform.rotation.w);
+      grenade.trail.geometry.setFromPoints([previous, grenade.mesh.position.clone()]);
+      grenade.lastPosition = grenade.mesh.position.clone();
+    }
     grenade.ageMs += delta * 1000;
     if (grenade.ageMs >= grenade.fuseMs) {
       const position = {
@@ -2268,4 +2043,13 @@ function updateImpacts(delta) {
 }
 
 connect();
+physics = await initPhysics({
+  mapConfig,
+  mapHalfSize: MAP_HALF_SIZE,
+  playerHeight: state.playerHeight,
+  gravity: GRENADE_CONFIG.gravity,
+  grenadeConfig: GRENADE_CONFIG
+});
+const initialCameraPosition = physics.getPlayerCameraPosition();
+camera.position.set(initialCameraPosition.x, initialCameraPosition.y, initialCameraPosition.z);
 animate();

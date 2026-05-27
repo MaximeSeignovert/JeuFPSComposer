@@ -50,6 +50,11 @@ const rooms = new Map();
 
 app.use(express.static(path.join(__dirname, "public")));
 
+app.get("/vendor/rapier/rapier.mjs", (_, res) => {
+  res.type("application/javascript");
+  res.sendFile(path.join(__dirname, "node_modules", "@dimforge", "rapier3d-compat", "rapier.mjs"));
+});
+
 app.get("/health", (_, res) => {
   res.json({ ok: true });
 });
