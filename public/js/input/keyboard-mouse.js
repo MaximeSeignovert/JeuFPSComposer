@@ -40,8 +40,8 @@ export function bindKeyboardMouseControls(options) {
   });
   document.addEventListener("mousemove", (e) => {
     if (!state.joined || document.pointerLockElement !== canvas) return;
-    state.yaw -= e.movementX * 0.0025;
-    state.pitch -= e.movementY * 0.002;
+    state.yaw -= e.movementX * 0.0025 * state.cameraSensitivity;
+    state.pitch -= e.movementY * 0.002 * state.cameraSensitivity;
     state.pitch = Math.max(-1.4, Math.min(1.4, state.pitch));
   });
   document.addEventListener("pointerlockchange", () => {

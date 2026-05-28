@@ -6,6 +6,7 @@ import { createPlayerController } from "./js/game/player-controller.js";
 import { createRemotePlayersController } from "./js/game/remote-players.js";
 import { createWeaponsController } from "./js/game/weapons-controller.js";
 import { bindKeyboardMouseControls } from "./js/input/keyboard-mouse.js";
+import { initializeCameraSensitivityUi } from "./js/input/camera-sensitivity.js";
 import { initializeKeyBindingUi, updateHudKeyHints } from "./js/input/keybinding-ui.js";
 import { syncFullscreenButton } from "./js/input/fullscreen.js";
 import { bindTouchControls, syncTouchControls } from "./js/input/touch-controls.js";
@@ -75,6 +76,7 @@ initializeKeyBindingUi({
     ctx.controllers.hud.updateAmmo();
   }
 });
+initializeCameraSensitivityUi();
 
 bindTouchControls({
   beginPrimaryFire: ctx.controllers.weapons.beginPrimaryFire,

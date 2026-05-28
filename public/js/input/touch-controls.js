@@ -120,8 +120,8 @@ function updateTouchLook(event) {
   const dy = event.clientY - touchInput.look.lastY;
   touchInput.look.lastX = event.clientX;
   touchInput.look.lastY = event.clientY;
-  state.yaw -= dx * 0.004;
-  state.pitch -= dy * 0.0032;
+  state.yaw -= dx * 0.004 * state.cameraSensitivity;
+  state.pitch -= dy * 0.0032 * state.cameraSensitivity;
   state.pitch = Math.max(-1.4, Math.min(1.4, state.pitch));
   return true;
 }

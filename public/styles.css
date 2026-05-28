@@ -131,6 +131,13 @@ input:focus {
     box-shadow: 0 0 0 3px rgba(69, 224, 168, 0.12);
 }
 
+input[type="range"] {
+    min-height: 24px;
+    padding: 0;
+    accent-color: var(--accent);
+    cursor: pointer;
+}
+
 .team-choice {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
@@ -1040,6 +1047,23 @@ button.active {
 
 .key-bindings-block {
     margin-top: 14px;
+}
+
+.sensitivity-control {
+    margin-top: 14px;
+}
+
+.sensitivity-control label {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.sensitivity-control output {
+    color: var(--accent);
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
 }
 
 .key-bindings-list {

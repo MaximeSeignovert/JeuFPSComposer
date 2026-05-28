@@ -8,6 +8,7 @@ export const state = {
   keys: new Set(),
   yaw: 0,
   pitch: 0,
+  cameraSensitivity: 1,
   moveSpeed: 5,
   sprintMultiplier: 2,
   playerHeight: 1.7,

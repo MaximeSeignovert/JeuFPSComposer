@@ -1,6 +1,10 @@
 export const BASE_FOV = 74;
 export const PLAYER_NAME_STORAGE_KEY = "fps.playerName";
 export const KEY_BINDINGS_STORAGE_KEY = "fps.keyBindings";
+export const CAMERA_SENSITIVITY_STORAGE_KEY = "fps.cameraSensitivity";
+export const DEFAULT_CAMERA_SENSITIVITY = 1;
+export const MIN_CAMERA_SENSITIVITY = 0.25;
+export const MAX_CAMERA_SENSITIVITY = 2.5;
 
 export const DEFAULT_KEY_BINDINGS = {
   forward: "z",
