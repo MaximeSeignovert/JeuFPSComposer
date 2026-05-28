@@ -103,44 +103,63 @@ function bindTouchStick(stick, data) {
   stick.addEventListener("pointercancel", release);
 }
 
+function beginTouchLook(event, captureTarget = touchControls) {
+  if (!isTouchControlsActive() || touchInput.look.pointerId !== null) return false;
+  event.preventDefault();
+  touchInput.look.pointerId = event.pointerId;
+  touchInput.look.lastX = event.clientX;
+  touchInput.look.lastY = event.clientY;
+  captureTarget?.setPointerCapture(event.pointerId);
+  return true;
+}
+
+function updateTouchLook(event) {
+  if (touchInput.look.pointerId !== event.pointerId) return false;
+  event.preventDefault();
+  const dx = event.clientX - touchInput.look.lastX;
+  const dy = event.clientY - touchInput.look.lastY;
+  touchInput.look.lastX = event.clientX;
+  touchInput.look.lastY = event.clientY;
+  state.yaw -= dx * 0.004;
+  state.pitch -= dy * 0.0032;
+  state.pitch = Math.max(-1.4, Math.min(1.4, state.pitch));
+  return true;
+}
+
+function endTouchLook(event) {
+  if (touchInput.look.pointerId !== event.pointerId) return false;
+  event.preventDefault();
+  touchInput.look.pointerId = null;
+  return true;
+}
+
 function bindTouchLookSurface() {
   if (!touchControls) return;
   const isReservedControl = (target) => Boolean(target.closest(".touch-stick, .touch-actions"));
   touchControls.addEventListener("pointerdown", (event) => {
     if (!isTouchControlsActive() || touchInput.look.pointerId !== null || isReservedControl(event.target)) return;
-    event.preventDefault();
-    touchInput.look.pointerId = event.pointerId;
-    touchInput.look.lastX = event.clientX;
-    touchInput.look.lastY = event.clientY;
-    touchControls.setPointerCapture(event.pointerId);
+    beginTouchLook(event);
   });
   touchControls.addEventListener("pointermove", (event) => {
-    if (touchInput.look.pointerId !== event.pointerId) return;
-    event.preventDefault();
-    const dx = event.clientX - touchInput.look.lastX;
-    const dy = event.clientY - touchInput.look.lastY;
-    touchInput.look.lastX = event.clientX;
-    touchInput.look.lastY = event.clientY;
-    state.yaw -= dx * 0.004;
-    state.pitch -= dy * 0.0032;
-    state.pitch = Math.max(-1.4, Math.min(1.4, state.pitch));
+    updateTouchLook(event);
   });
   const release = (event) => {
-    if (touchInput.look.pointerId !== event.pointerId) return;
-    event.preventDefault();
-    touchInput.look.pointerId = null;
+    endTouchLook(event);
   };
   touchControls.addEventListener("pointerup", release);
   touchControls.addEventListener("pointercancel", release);
 }
 
-function bindTouchButton(button, onDown, onUp) {
+function bindTouchButton(button, onDown, onUp, onMove) {
   if (!button) return;
   button.addEventListener("pointerdown", (event) => {
     if (!isTouchControlsActive()) return;
     event.preventDefault();
     button.setPointerCapture(event.pointerId);
     onDown?.(event);
+  });
+  button.addEventListener("pointermove", (event) => {
+    onMove?.(event);
   });
   const release = (event) => {
     event.preventDefault();
@@ -156,17 +175,20 @@ export function bindTouchControls(options) {
   bindTouchLookSurface();
   bindTouchButton(
     touchFireBtn,
-    () => {
+    (event) => {
       if (!options.beginPrimaryFire()) return;
+      beginTouchLook(event, touchFireBtn);
       touchFireBtn?.classList.add("is-active");
       if (!options.getWeaponStats().auto) {
         touchFireBtn?.classList.remove("is-active");
       }
     },
-    () => {
+    (event) => {
       options.endPrimaryFire();
+      endTouchLook(event);
       touchFireBtn?.classList.remove("is-active");
-    }
+    },
+    updateTouchLook
   );
   bindTouchButton(touchAimBtn, () => {
     if (!state.joined || state.pauseOpen || !state.isAlive) return;
