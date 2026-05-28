@@ -37,6 +37,7 @@ export const state = {
   deathKillerWeapon: "",
   joined: false,
   pauseOpen: false,
+  pauseOpenedAt: 0,
   grenadeSequence: 0,
   lastGrenadePickupAttemptAt: 0,
   viewRecoilZ: 0,

@@ -4,6 +4,8 @@ import { state } from "../state.js";
 import { keyBindings } from "./keybinding-ui.js";
 import { resetTouchInput, shouldUsePointerLock } from "./touch-controls.js";
 
+const PAUSE_OVERLAY_CLOSE_COOLDOWN_MS = 300;
+
 export function bindKeyboardMouseControls(options) {
   document.addEventListener("keydown", (e) => {
     const pressedKey = getKeyBindingFromEvent(e);
@@ -84,6 +86,7 @@ export function bindKeyboardMouseControls(options) {
 
   pauseMenuOverlay.addEventListener("click", (e) => {
     if (e.target !== pauseMenuOverlay) return;
+    if (performance.now() - state.pauseOpenedAt < PAUSE_OVERLAY_CLOSE_COOLDOWN_MS) return;
     options.setPauseMenu(false);
     if (shouldUsePointerLock()) canvas.requestPointerLock();
   });

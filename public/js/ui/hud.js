@@ -242,6 +242,7 @@ export function createHudController(ctx) {
   function setPauseMenu(open) {
     if (!state.joined) return;
     state.pauseOpen = open;
+    if (open) state.pauseOpenedAt = performance.now();
     cancelKeyRebind();
     pauseMenuOverlay.classList.toggle("hidden", !open);
     crosshair.classList.toggle("hidden", open);
