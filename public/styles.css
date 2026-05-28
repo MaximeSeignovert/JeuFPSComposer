@@ -1242,14 +1242,13 @@ button.active {
     position: absolute;
     right: max(18px, env(safe-area-inset-right));
     bottom: max(18px, env(safe-area-inset-bottom));
-    display: grid;
-    grid-template-columns: repeat(2, 58px) 74px;
-    grid-template-rows: repeat(3, 54px);
-    gap: 10px;
+    width: 254px;
+    height: 226px;
     pointer-events: auto;
 }
 
 .touch-action {
+    position: absolute;
     min-width: 0;
     width: 58px;
     height: 52px;
@@ -1266,65 +1265,71 @@ button.active {
     box-shadow: 0 10px 24px rgba(0, 0, 0, 0.24);
 }
 
+.touch-action svg {
+    display: block;
+    width: 24px;
+    height: 24px;
+    stroke-width: 2.4;
+}
+
 .touch-action:disabled {
     opacity: 0.48;
     filter: grayscale(0.45);
 }
 
 .touch-action--fire {
-    grid-column: 3;
-    grid-row: 2 / span 2;
-    width: 74px;
-    height: 74px;
-    align-self: center;
-    justify-self: end;
+    left: 72px;
+    top: 68px;
+    width: 112px;
+    height: 112px;
     border-color: rgba(255, 96, 127, 0.68);
     background: rgba(255, 96, 127, 0.22);
     color: #ffe5eb;
 }
 
+.touch-action--fire svg {
+    width: 42px;
+    height: 42px;
+    stroke-width: 2.6;
+}
+
 .touch-action--small {
-    grid-column: 3;
-    grid-row: 1;
-    justify-self: end;
     font-size: 15px;
 }
 
 .touch-action--fullscreen {
-    grid-column: 1;
-    grid-row: 1;
+    position: fixed;
+    left: max(14px, env(safe-area-inset-left));
+    top: max(14px, env(safe-area-inset-top));
     display: flex;
     align-items: center;
     justify-content: center;
 }
 
-.touch-action--fullscreen svg {
-    display: block;
-    fill: none;
-    stroke: currentColor;
-    stroke-width: 2.2;
-    stroke-linecap: round;
-    stroke-linejoin: round;
+.touch-action--pause {
+    position: fixed;
+    right: max(14px, env(safe-area-inset-right));
+    top: max(14px, env(safe-area-inset-top));
 }
 
 #touchAimBtn {
-    grid-column: 2;
-    grid-row: 1;
+    right: 36px;
+    top: 18px;
 }
 
 #touchJumpBtn {
-    grid-column: 2;
-    grid-row: 2;
+    right: 0;
+    top: 104px;
 }
 
 #touchGrenadeBtn {
-    grid-column: 1;
-    grid-row: 2;
+    left: 46px;
+    top: 0;
 }
 
 #touchReloadBtn {
-    grid-column: 1;
-    grid-row: 3;
+    left: 0;
+    top: 146px;
 }
 
 .touch-action:active,

@@ -6,6 +6,43 @@
     <title>FPS 5v5 Three.js</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="./styles.css" />
+    <script type="module">
+      import createElement from "https://unpkg.com/lucide@0.468.0/dist/esm/createElement.js";
+      import Maximize from "https://unpkg.com/lucide@0.468.0/dist/esm/icons/maximize.js";
+      import Pause from "https://unpkg.com/lucide@0.468.0/dist/esm/icons/pause.js";
+      import Crosshair from "https://unpkg.com/lucide@0.468.0/dist/esm/icons/crosshair.js";
+      import MoveUp from "https://unpkg.com/lucide@0.468.0/dist/esm/icons/move-up.js";
+      import Bomb from "https://unpkg.com/lucide@0.468.0/dist/esm/icons/bomb.js";
+      import RotateCw from "https://unpkg.com/lucide@0.468.0/dist/esm/icons/rotate-cw.js";
+      import Zap from "https://unpkg.com/lucide@0.468.0/dist/esm/icons/zap.js";
+
+      const touchIcons = {
+        maximize: Maximize,
+        pause: Pause,
+        crosshair: Crosshair,
+        "move-up": MoveUp,
+        bomb: Bomb,
+        "rotate-cw": RotateCw,
+        zap: Zap
+      };
+
+      function renderTouchIcons() {
+        document.querySelectorAll("[data-lucide]").forEach((placeholder) => {
+          const icon = touchIcons[placeholder.dataset.lucide];
+          if (!icon) return;
+          const svg = createElement(icon);
+          svg.setAttribute("data-lucide", placeholder.dataset.lucide);
+          svg.setAttribute("aria-hidden", "true");
+          placeholder.replaceWith(svg);
+        });
+      }
+
+      if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", renderTouchIcons, { once: true });
+      } else {
+        renderTouchIcons();
+      }
+    </script>
   </head>
   <body>
     <main id="app">
@@ -220,16 +257,32 @@
             aria-label="Plein écran"
             title="Plein écran"
           >
-            <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
-              <path d="M5 9V5h4M15 5h4v4M19 15v4h-4M9 19H5v-4" />
-            </svg>
+            <i data-lucide="maximize" aria-hidden="true"></i>
           </button>
-          <button id="touchPauseBtn" class="touch-action touch-action--small" type="button">II</button>
-          <button id="touchAimBtn" class="touch-action" type="button">Visee</button>
-          <button id="touchJumpBtn" class="touch-action" type="button">Saut</button>
-          <button id="touchGrenadeBtn" class="touch-action" type="button">Grenade</button>
-          <button id="touchReloadBtn" class="touch-action" type="button">Reload</button>
-          <button id="touchFireBtn" class="touch-action touch-action--fire" type="button">Tir</button>
+          <button
+            id="touchPauseBtn"
+            class="touch-action touch-action--small touch-action--pause"
+            type="button"
+            aria-label="Pause"
+            title="Pause"
+          >
+            <i data-lucide="pause" aria-hidden="true"></i>
+          </button>
+          <button id="touchAimBtn" class="touch-action" type="button" aria-label="Visée" title="Visée">
+            <i data-lucide="crosshair" aria-hidden="true"></i>
+          </button>
+          <button id="touchJumpBtn" class="touch-action" type="button" aria-label="Saut" title="Saut">
+            <i data-lucide="move-up" aria-hidden="true"></i>
+          </button>
+          <button id="touchGrenadeBtn" class="touch-action" type="button" aria-label="Grenade" title="Grenade">
+            <i data-lucide="bomb" aria-hidden="true"></i>
+          </button>
+          <button id="touchReloadBtn" class="touch-action" type="button" aria-label="Recharger" title="Recharger">
+            <i data-lucide="rotate-cw" aria-hidden="true"></i>
+          </button>
+          <button id="touchFireBtn" class="touch-action touch-action--fire" type="button" aria-label="Tir" title="Tir">
+            <i data-lucide="zap" aria-hidden="true"></i>
+          </button>
         </div>
       </section>
       <canvas id="gameCanvas"></canvas>
