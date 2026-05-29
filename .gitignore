@@ -36,5 +36,7 @@ jspm_packages/
 .cache/
 coverage/
 
-# Railway specific
-railway.json
+# Local helper files
+.codex-server.pid
+.colyseus-test.log
+.colyseus-test.err

@@ -5,7 +5,7 @@ FPS 1ere personne avec:
 - matchmaking 5v5 (2 equipes de 5)
 - choix d'arme: `Fusil a pompe`, `Sniper`, `AK47`, `Couteau`
 - rendu Three.js
-- backend WebSocket pour synchronisation
+- backend Colyseus pour les rooms et la synchronisation
 
 ## Lancer en local
 
@@ -16,15 +16,15 @@ npm run dev
 
 Puis ouvre `http://localhost:3000`.
 
-## Deploy rapide sur Railway
+## Build / production
 
-1. Push ce projet sur GitHub.
-2. Sur Railway: `New Project` -> `Deploy from GitHub repo`.
-3. Railway detecte automatiquement Node.js.
-4. Le service lance `npm start`.
-5. Ouvre l'URL Railway generee.
+```bash
+npm run build
+npm start
+```
 
-Le fichier `railway.json` est deja configure avec healthcheck `/health`.
+Le serveur respecte `PORT` si la variable est fournie. L'endpoint `GET /health`
+retourne `{ ok: true }`.
 
 ## Notes gameplay
 

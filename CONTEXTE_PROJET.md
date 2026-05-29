@@ -10,7 +10,7 @@ Fonctionnalites principales actuelles :
 
 - menu de connexion avec pseudo et liste des rooms ;
 - rendu 3D avec Three.js ;
-- serveur Express + WebSocket pour synchroniser les joueurs ;
+- serveur Express + Colyseus pour synchroniser les joueurs ;
 - physique locale avec Rapier 3D ;
 - armes : `AK47`, `Fusil a pompe`, `Sniper`, `Couteau` ;
 - tirs, degats, morts, respawn, kill feed ;
@@ -22,14 +22,14 @@ Fonctionnalites principales actuelles :
 
 ## Stack technique
 
-- Runtime : Node.js `>=18`
-- Serveur : Express `4.x`, HTTP natif Node, `ws`
+- Runtime : Node.js `>=22`
+- Serveur : Express `4.x`, Colyseus `0.17`, WebSocket transport Colyseus
 - Client : HTML/CSS/JavaScript modules ES natifs, sans bundler
 - 3D : Three.js charge depuis CDN `unpkg`
 - Physique : `@dimforge/rapier3d-compat`, servi localement via `/vendor/rapier/rapier.mjs`
 - UI utilitaire : Tailwind CDN dans `public/index.html`
 - Icones tactiles : Lucide charge depuis CDN `unpkg`
-- Deploiement cible : Railway, configure dans `railway.json`
+- Deploiement cible : serveur Node generique compatible avec `PORT`
 
 ## Commandes utiles
 
@@ -42,8 +42,9 @@ Le serveur demarre par defaut sur `http://localhost:3000`.
 
 Scripts disponibles :
 
-- `npm start` : lance `node server.js`
-- `npm run dev` : lance aussi `node server.js`
+- `npm run dev` : lance `tsx watch server/src/index.ts`
+- `npm run build` : compile le serveur TypeScript dans `dist/`
+- `npm start` : lance `node dist/server/src/index.js`
 
 Variables/env utiles :
 
@@ -57,19 +58,21 @@ Endpoint de sante :
 
 ## Architecture generale
 
-Le projet n'utilise pas de bundler : `server.js` sert directement les fichiers statiques de `public/`, et `public/main.js` importe les modules client avec des chemins relatifs.
+Le projet n'utilise pas de bundler client : le serveur Colyseus/Express sert directement les fichiers statiques de `public/`, et `public/main.js` importe les modules client avec des chemins relatifs.
 
 Flux simplifie :
 
-1. `server.js` lance Express et le serveur WebSocket.
-2. `public/index.html` charge le CSS, les CDN et `public/main.js`.
+1. `server/src/index.ts` lance Express, Colyseus et le transport WebSocket.
+2. `public/index.html` charge le CSS, le SDK Colyseus local, les CDN et `public/main.js`.
 3. `public/main.js` cree la scene Three.js, le contexte de jeu, les controllers, puis initialise Rapier.
-4. Le client se connecte au WebSocket via `public/js/net/socket-client.js`.
-5. Le serveur gere rooms, joueurs, degats, respawn, grenades et broadcasts.
+4. Le client rejoint la room Colyseus via `public/js/net/socket-client.js`.
+5. `server/src/FpsRoom.ts` gere joueurs, degats, respawn, grenades et broadcasts.
 
 ## Fichiers d'entree
 
-- `server.js` : backend complet, serveur HTTP, WebSocket, rooms, joueurs, degats, respawn, grenades, bot de dev.
+- `server/src/index.ts` : backend HTTP, routes statiques, `/health`, `/api/rooms`, SDK Colyseus local.
+- `server/src/FpsRoom.ts` : room Colyseus, joueurs, degats, respawn, grenades, bot de dev.
+- `server/src/schema.ts` : schemas Colyseus synchronises.
 - `public/index.html` : structure DOM complete de l'app, menu, HUD, pause, controles tactiles, canvas.
 - `public/main.js` : composition des controllers, initialisation scene/physique/reseau, boucle `requestAnimationFrame`.
 - `public/styles.css` : styles globaux, menu, HUD, effets, controles tactiles.
@@ -104,7 +107,7 @@ Flux simplifie :
 
 ### Reseau/UI/Donnees
 
-- `public/js/net/socket-client.js` : client WebSocket et dispatch des messages serveur.
+- `public/js/net/socket-client.js` : client Colyseus et dispatch des messages serveur.
 - `public/js/ui/hud.js` : rooms, HUD, vie, munitions, grenade, kill feed, pause/death screen.
 - `public/js/dom.js` : references DOM centralisees.
 - `public/js/player-name.js` : pseudo et sanitation localStorage.
@@ -112,11 +115,11 @@ Flux simplifie :
 - `public/js/players/appearance.js` : apparence des joueurs distants.
 - `public/js/physics/rapier-physics.js` : monde Rapier, collisions map, controller personnage, grenades physiques.
 
-## Backend `server.js`
+## Backend Colyseus
 
 Constantes principales :
 
-- `MAX_ROOMS = 1`
+- room logique unique `fps_room`
 - `ROOM_SIZE = 10`
 - `MAX_HEALTH = 100`
 - `RESPAWN_DELAY_MS = 3200`
@@ -127,22 +130,23 @@ Constantes principales :
 
 Responsabilites serveur :
 
-- cree les rooms au demarrage ;
+- cree une room Colyseus persistante au demarrage ;
 - sert `public/` ;
-- expose Rapier depuis `node_modules` ;
-- tient la liste des joueurs par room ;
+- expose Rapier et le SDK Colyseus depuis `node_modules` ;
+- expose `/api/rooms` pour le lobby ;
+- tient la liste des joueurs dans `FpsRoom` ;
 - assigne id, room, team/FFA, spawn, arme, vie ;
 - valide/sanitise les positions et degats ;
 - broadcast les updates joueurs, tirs, morts, respawns et grenades ;
 - gere les pickups et respawns de grenades ;
 - anime un bot de dev quand active.
 
-## Protocole WebSocket
+## Protocole Colyseus
 
 Messages client -> serveur principaux :
 
 - `player:setName`
-- `room:join`
+- `room:sync`
 - `player:update`
 - `player:shoot`
 - `player:hit`
@@ -151,9 +155,8 @@ Messages client -> serveur principaux :
 - `grenade:throw`
 - `grenade:explode`
 
-Messages serveur -> client principaux :
+Messages room -> client principaux :
 
-- `rooms:update`
 - `room:joined`
 - `room:players`
 - `room:error`
@@ -167,7 +170,7 @@ Messages serveur -> client principaux :
 - `grenade:thrown`
 - `grenade:explode`
 
-Le client dispatch ces messages dans `public/js/net/socket-client.js`.
+Le client rejoint la room via le SDK Colyseus puis dispatch ces messages dans `public/js/net/socket-client.js`.
 
 ## Donnees gameplay importantes
 
@@ -206,7 +209,6 @@ La physique map doit rester coherente entre :
 |-- README.md
 |-- package.json
 |-- package-lock.json
-|-- railway.json
 |-- server.js
 |-- codex-server.log
 |-- codex-server.err.log
@@ -249,12 +251,16 @@ La physique map doit rester coherente entre :
 |   |       `-- scene.js
 |   `-- vendor/
 |-- server/
+|   `-- src/
+|       |-- FpsRoom.ts
+|       |-- index.ts
+|       `-- schema.ts
 `-- tests/
 ```
 
 Notes :
 
-- `server/`, `tests/` et `public/vendor/` existent mais semblent vides actuellement.
+- `tests/` et `public/vendor/` existent mais semblent vides actuellement.
 - `codex-server.log` et `codex-server.err.log` sont des logs locaux, pas des sources.
 - Le projet est sur la branche `main` et suit `origin/main`.
 
@@ -262,7 +268,7 @@ Notes :
 
 - Il n'y a actuellement pas de suite de tests declaree dans `package.json`.
 - Les CDN Three.js, Tailwind et Lucide sont charges directement par le navigateur : une connexion internet est necessaire au runtime client.
-- Le backend est monolithique dans `server.js`; toute evolution reseau doit verifier les deux cotes du protocole WebSocket.
+- Le backend gameplay vit dans `server/src/FpsRoom.ts`; toute evolution reseau doit verifier le client Colyseus et les messages room.
 - Les constantes existent parfois cote client et cote serveur : garder les valeurs synchronisees quand elles impactent le gameplay.
 - Rapier est servi par Express depuis `node_modules`; ne pas casser la route `/vendor/rapier/rapier.mjs`.
 - Les controles par defaut sont AZERTY (`zqsd`) et persistent via `localStorage`.

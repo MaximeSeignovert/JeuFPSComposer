@@ -1,18 +1,26 @@
 {
   "name": "jeu-fps-composer",
   "version": "1.0.0",
-  "description": "FPS 5v5 rooms with Three.js and Railway deployment",
-  "main": "server.js",
+  "description": "FPS 5v5 rooms with Three.js and Colyseus",
+  "main": "dist/server/src/index.js",
   "scripts": {
-    "start": "node server.js",
-    "dev": "node server.js"
+    "build": "tsc",
+    "start": "node dist/server/src/index.js",
+    "dev": "tsx watch server/src/index.ts"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=22"
   },
   "dependencies": {
+    "@colyseus/schema": "^4.0.25",
+    "@colyseus/sdk": "^0.17.42",
+    "@colyseus/ws-transport": "^0.17.13",
     "@dimforge/rapier3d-compat": "^0.19.3",
+    "@types/express": "^5.0.6",
+    "@types/node": "^25.9.1",
+    "colyseus": "^0.17.10",
     "express": "^4.21.2",
-    "ws": "^8.18.0"
+    "tsx": "^4.22.3",
+    "typescript": "^6.0.3"
   }
 }

@@ -5,30 +5,60 @@ import { shouldUsePointerLock, syncTouchControls } from "../input/touch-controls
 export function createSocketClient(ctx) {
   const { state } = ctx;
   const { canvas, nameInput } = ctx.dom;
+  const roomName = "fps_room";
+  let client = null;
+  let room = null;
 
   function isOpen() {
-    return state.ws && state.ws.readyState === WebSocket.OPEN;
+    return Boolean(room);
   }
 
   function send(data) {
     if (!isOpen()) return false;
-    state.ws.send(JSON.stringify(data));
+    room.send(data.type, data);
     return true;
   }
 
+  async function refreshRooms() {
+    try {
+      const response = await fetch("/api/rooms", { cache: "no-store" });
+      const payload = await response.json();
+      ctx.controllers.hud.renderRooms(Array.isArray(payload.rooms) ? payload.rooms : []);
+    } catch {
+      ctx.controllers.hud.showRoomError("Impossible de charger les rooms");
+    }
+  }
+
+  function attachRoomHandlers(nextRoom) {
+    nextRoom.onMessage("rooms:update", (msg) => handleMessage({ type: "rooms:update", ...msg }));
+    nextRoom.onMessage("room:joined", (msg) => handleMessage({ type: "room:joined", ...msg }));
+    nextRoom.onMessage("room:players", (msg) => handleMessage({ type: "room:players", ...msg }));
+    nextRoom.onMessage("room:error", (msg) => handleMessage({ type: "room:error", ...msg }));
+    nextRoom.onMessage("room:grenades", (msg) => handleMessage({ type: "room:grenades", ...msg }));
+    nextRoom.onMessage("player:update", (msg) => handleMessage({ type: "player:update", ...msg }));
+    nextRoom.onMessage("player:health", (msg) => handleMessage({ type: "player:health", ...msg }));
+    nextRoom.onMessage("player:grenadeInventory", (msg) => handleMessage({ type: "player:grenadeInventory", ...msg }));
+    nextRoom.onMessage("player:died", (msg) => handleMessage({ type: "player:died", ...msg }));
+    nextRoom.onMessage("player:respawn", (msg) => handleMessage({ type: "player:respawn", ...msg }));
+    nextRoom.onMessage("player:shoot", (msg) => handleMessage({ type: "player:shoot", ...msg }));
+    nextRoom.onMessage("grenade:thrown", (msg) => handleMessage({ type: "grenade:thrown", ...msg }));
+    nextRoom.onMessage("grenade:explode", (msg) => handleMessage({ type: "grenade:explode", ...msg }));
+    nextRoom.onLeave(() => {
+      room = null;
+      state.joined = false;
+      ctx.controllers.hud.showRoomError("Connexion perdue");
+      refreshRooms();
+    });
+  }
+
   function connect() {
-    const protocol = location.protocol === "https:" ? "wss" : "ws";
-    state.ws = new WebSocket(`${protocol}://${location.host}`);
-
-    state.ws.addEventListener("open", () => {
-      savePlayerName(nameInput.value);
-      send({ type: "player:setName", name: sanitizePlayerName(nameInput.value) });
-    });
-
-    state.ws.addEventListener("message", (event) => {
-      const msg = JSON.parse(event.data);
-      handleMessage(msg);
-    });
+    nameInput.value = loadPlayerName();
+    if (!window.Colyseus?.Client) {
+      ctx.controllers.hud.showRoomError("SDK Colyseus indisponible");
+      return;
+    }
+    client = new window.Colyseus.Client(location.origin);
+    refreshRooms();
   }
 
   function handleMessage(msg) {
@@ -162,11 +192,25 @@ export function createSocketClient(ctx) {
     }
   }
 
-  function joinRoom(roomId) {
-    if (!isOpen()) return;
+  async function joinRoom() {
+    if (!client) return;
     savePlayerName(nameInput.value);
-    send({ type: "player:setName", name: sanitizePlayerName(nameInput.value) });
-    send({ type: "room:join", roomId });
+    const name = sanitizePlayerName(nameInput.value);
+    try {
+      const roomListResponse = await fetch("/api/rooms", { cache: "no-store" });
+      const roomListPayload = await roomListResponse.json();
+      const roomInfo = Array.isArray(roomListPayload.rooms) ? roomListPayload.rooms[0] : null;
+      room = roomInfo?.roomId
+        ? await client.joinById(roomInfo.roomId, { name })
+        : await client.create(roomName, { name });
+      state.room = room;
+      attachRoomHandlers(room);
+      room.send("player:setName", { name });
+      room.send("room:sync", {});
+    } catch {
+      ctx.controllers.hud.showRoomError("Room pleine ou indisponible");
+      refreshRooms();
+    }
   }
 
   function sendGrenadeExplode({ id, position }) {
