@@ -89,6 +89,8 @@ export const WEAPON_STATS = {
     spread: 0,
     damage: 100,
     range: 2.75,
+    swingHalfAngle: 58,
+    swingTargetRadius: 0.5,
     bulletSpeed: 0,
     auto: false,
     melee: true,

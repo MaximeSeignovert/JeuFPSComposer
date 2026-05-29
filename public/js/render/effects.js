@@ -140,6 +140,82 @@ export function createEffectsController(ctx) {
     return hit;
   }
 
+  function hasWorldOcclusion(origin, target, maxDistance) {
+    if (!ctx.worldColliders.length) return false;
+    const toTarget = target.clone().sub(origin);
+    const distance = toTarget.length();
+    if (distance <= 0.001) return false;
+
+    ctx.raycaster.set(origin, toTarget.normalize());
+    ctx.raycaster.far = Math.min(distance, maxDistance);
+    const wallHit = ctx.raycaster.intersectObjects(ctx.worldColliders, false)[0];
+    return Boolean(wallHit && wallHit.distance + 0.08 < distance);
+  }
+
+  function traceMeleeSweep(origin, direction, maxDistance = 2.75, reportHit = false, damage = 0, options = {}) {
+    const sweepOrigin = new THREE.Vector3(origin.x, origin.y, origin.z);
+    const forward = new THREE.Vector3(direction.x, 0, direction.z);
+    if (forward.lengthSq() <= 0.0001) return null;
+    forward.normalize();
+
+    const range = Math.max(0.2, Number(maxDistance) || 2.75);
+    const targetRadius = Math.max(0, Number(options.targetRadius) || 0.5);
+    const halfAngleRad = THREE.MathUtils.degToRad(Math.max(1, Number(options.halfAngle) || 58));
+    const minDot = Math.cos(halfAngleRad);
+    let best = null;
+
+    ctx.remoteMeshes.forEach((remotePlayer) => {
+      if (remotePlayer.alive === false || !remotePlayer.root?.visible) return;
+      const hitbox = remotePlayer.root.userData?.hitbox;
+      const playerId = hitbox?.userData?.playerId || remotePlayer.root.userData?.playerId;
+      if (!playerId || playerId === state.playerId) return;
+
+      const targetPos = remotePlayer.root.position.clone();
+      targetPos.y = sweepOrigin.y;
+      const toTarget = targetPos.sub(sweepOrigin);
+      const distance = Math.hypot(toTarget.x, toTarget.z);
+      if (distance > range + targetRadius || distance <= 0.001) return;
+
+      const targetDir = toTarget.clone().normalize();
+      const frontalDistance = toTarget.dot(forward);
+      if (frontalDistance < -targetRadius) return;
+
+      const sideDistance = Math.abs(toTarget.x * forward.z - toTarget.z * forward.x);
+      const inCone = targetDir.dot(forward) >= minDot || sideDistance <= targetRadius;
+      if (!inCone) return;
+
+      const center = new THREE.Vector3();
+      if (hitbox) {
+        hitbox.getWorldPosition(center);
+      } else {
+        center.copy(remotePlayer.root.position).add(new THREE.Vector3(0, 1.2, 0));
+      }
+      if (hasWorldOcclusion(sweepOrigin, center, range + targetRadius)) return;
+
+      if (!best || distance < best.distance) {
+        best = { distance, point: center, playerId, object: hitbox || remotePlayer.root };
+      }
+    });
+
+    if (!best) return null;
+
+    const impact = new THREE.Mesh(
+      new THREE.SphereGeometry(0.07, 8, 8),
+      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.95 })
+    );
+    impact.position.copy(best.point);
+    scene.add(impact);
+    ctx.impacts.push({ mesh: impact, life: 0.16 });
+
+    if (!reportHit || !ctx.controllers.socket?.isOpen()) return best;
+    triggerHitmarker();
+    ctx.controllers.socket?.sendHit({
+      targetId: best.playerId,
+      damage: Math.max(1, Number(damage) || 1)
+    });
+    return best;
+  }
+
   function updateDeathCamera(delta) {
     if (state.isAlive || !state.deathKillerId) return;
     const killer = ctx.remoteMeshes.get(state.deathKillerId);
@@ -228,6 +304,7 @@ export function createEffectsController(ctx) {
     spawnKnifeSlash,
     spawnMuzzleFlash,
     traceImpact,
+    traceMeleeSweep,
     triggerDamageOverlay,
     triggerHitmarker,
     update

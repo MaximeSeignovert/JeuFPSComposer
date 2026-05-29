@@ -28,6 +28,8 @@ const GRENADE_MAX_DAMAGE = 95;
 const GRENADE_PICKUP_RESPAWN_MS = 12000;
 const GRENADE_PICKUP_RADIUS = 2.2;
 const KNIFE_HIT_RANGE = 3.35;
+const KNIFE_HIT_HALF_ANGLE_RAD = (62 * Math.PI) / 180;
+const KNIFE_HIT_TARGET_RADIUS = 0.55;
 const PLAYER_UPDATE_MIN_INTERVAL_MS = 35;
 const PLAYER_UPDATE_MIN_MOVE_SQ = 0.0004;
 const PLAYER_UPDATE_MIN_ROTATION = 0.002;
@@ -381,7 +383,7 @@ export class FpsRoom extends Room<{ state: FpsState }> {
     if (target?.alive) {
       const targetRuntime = this.getRuntime(target.id);
       if (Date.now() < (targetRuntime?.invulnerableUntil || 0)) return;
-      if (isKnifeHit && this.distance2DSquared(attacker.position, target.position) > KNIFE_HIT_RANGE * KNIFE_HIT_RANGE) return;
+      if (isKnifeHit && !this.isInsideKnifeSweep(attacker, target.position)) return;
 
       target.health = Math.max(0, target.health - damage);
       this.sendHealth(target);
@@ -394,7 +396,7 @@ export class FpsRoom extends Room<{ state: FpsState }> {
     }
 
     if (ENABLE_DEV_BOT && this.devBot && targetId === this.devBot.id && this.devBot.alive) {
-      if (isKnifeHit && this.distance2DSquared(attacker.position, this.devBot.position) > KNIFE_HIT_RANGE * KNIFE_HIT_RANGE) return;
+      if (isKnifeHit && !this.isInsideKnifeSweep(attacker, this.devBot.position)) return;
       this.devBot.health = Math.max(0, this.devBot.health - damage);
       if (this.devBot.health > 0) {
         this.sendRoomPlayers();
@@ -675,5 +677,23 @@ export class FpsRoom extends Room<{ state: FpsState }> {
     const dx = (Number(a?.x) || 0) - (Number(b?.x) || 0);
     const dz = (Number(a?.z) || 0) - (Number(b?.z) || 0);
     return dx * dx + dz * dz;
+  }
+
+  private isInsideKnifeSweep(attacker: PlayerState, targetPosition: Vec3Like) {
+    const ax = Number(attacker.position?.x) || 0;
+    const az = Number(attacker.position?.z) || 0;
+    const dx = (Number(targetPosition?.x) || 0) - ax;
+    const dz = (Number(targetPosition?.z) || 0) - az;
+    const distance = Math.hypot(dx, dz);
+    if (distance > KNIFE_HIT_RANGE + KNIFE_HIT_TARGET_RADIUS || distance <= 0.001) return false;
+
+    const forwardX = -Math.sin(attacker.rotationY || 0);
+    const forwardZ = -Math.cos(attacker.rotationY || 0);
+    const frontalDistance = dx * forwardX + dz * forwardZ;
+    if (frontalDistance < -KNIFE_HIT_TARGET_RADIUS) return false;
+
+    const sideDistance = Math.abs(dx * forwardZ - dz * forwardX);
+    const dot = frontalDistance / distance;
+    return dot >= Math.cos(KNIFE_HIT_HALF_ANGLE_RAD) || sideDistance <= KNIFE_HIT_TARGET_RADIUS;
   }
 }
