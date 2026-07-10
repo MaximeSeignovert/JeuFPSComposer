@@ -55,6 +55,12 @@ export function createWeaponsController(ctx) {
     ctx.controllers.hud?.updateAmmo();
   }
 
+  function clearShotCooldown() {
+    state.shotCooldownWeapon = null;
+    state.shotCooldownUntil = 0;
+    state.shotCooldownDuration = 0;
+  }
+
   function isReloadingWeapon(weapon = state.weapon) {
     return state.reloadWeapon === weapon && performance.now() < state.reloadUntil;
   }
@@ -76,6 +82,7 @@ export function createWeaponsController(ctx) {
     state.reloadUntil = performance.now() + getReloadDurationMs(weapon);
     state.isFiring = false;
     if (manual) state.primaryFireHeld = false;
+    ctx.controllers.sound?.playReload(weapon);
     ctx.controllers.hud?.updateAmmo();
     return true;
   }
@@ -113,6 +120,7 @@ export function createWeaponsController(ctx) {
     state.weapon = weapon;
     state.isAiming = false;
     cancelReload();
+    clearShotCooldown();
     ensureWeaponAmmo(weapon);
     ctx.controllers.hud?.updateAmmo();
     touchAimBtn?.classList.remove("is-active");
@@ -173,6 +181,13 @@ export function createWeaponsController(ctx) {
     const msBetweenShots = 1000 / stats.fireRate;
     if (now - state.lastShotAt < msBetweenShots) return;
     state.lastShotAt = now;
+    if (state.weapon === "shotgun" || state.weapon === "sniper") {
+      state.shotCooldownWeapon = state.weapon;
+      state.shotCooldownUntil = now + msBetweenShots;
+      state.shotCooldownDuration = msBetweenShots;
+    } else {
+      clearShotCooldown();
+    }
 
     const muzzle = viewModel.userData.activeMuzzle || viewModel.userData.muzzle;
     const spawnPos = new THREE.Vector3();
@@ -201,6 +216,7 @@ export function createWeaponsController(ctx) {
     state.ammoByWeapon[state.weapon] = Math.max(0, ensureWeaponAmmo() - 1);
     ctx.controllers.hud?.updateAmmo();
     impulseViewRecoilFromWeapon(stats);
+    ctx.controllers.sound?.playShot(state.weapon);
 
     const right = new THREE.Vector3().crossVectors(camera.up, baseDirection).normalize();
     const up = new THREE.Vector3().crossVectors(baseDirection, right).normalize();
@@ -320,7 +336,8 @@ export function createWeaponsController(ctx) {
     const reloadProgress = getReloadProgress();
     const rotXTarget = isAk ? 0.085 : 0.024;
     const yTarget = isAk ? 0.0 : 0.1;
-    const xTarget = isShotgun ? 0 : 0.02;
+    // Compense le léger décalage à gauche du modèle du fusil à pompe en visée.
+    const xTarget = isShotgun ? 0.035 : 0.02;
     const airY = state.onGround ? 0 : -0.03;
 
     viewModel.position.x = THREE.MathUtils.lerp(
@@ -382,6 +399,7 @@ export function createWeaponsController(ctx) {
   return {
     beginPrimaryFire,
     cancelReload,
+    clearShotCooldown,
     endPrimaryFire,
     endPrimaryFireFromMouseEvent,
     ensureWeaponAmmo,

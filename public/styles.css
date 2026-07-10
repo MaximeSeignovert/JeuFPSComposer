@@ -841,6 +841,34 @@ button.active {
     pointer-events: none;
 }
 
+.weapon-shot-loader {
+    --shot-cooldown-progress: 0;
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 44px;
+    aspect-ratio: 1;
+    transform: translate(-50%, -50%) rotate(-90deg);
+    z-index: 4;
+    pointer-events: none;
+    border-radius: 50%;
+    background: conic-gradient(
+        rgba(255, 255, 255, 0.95) calc(var(--shot-cooldown-progress) * 1turn),
+        rgba(255, 255, 255, 0.18) 0
+    );
+    mask: radial-gradient(circle, transparent 59%, #000 62%);
+    filter: drop-shadow(0 1px 4px rgba(0, 0, 0, 0.85));
+}
+
+.weapon-shot-loader::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: transparent;
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.7);
+}
+
 .damage-overlay {
     position: absolute;
     inset: 0;
@@ -1414,4 +1442,153 @@ button.active {
 
 .hidden {
     display: none;
+}
+
+/* Direction visuelle : monochrome low-poly, verre fumé et formes nettes. */
+:root {
+    --bg: #0a0a0a;
+    --panel: rgba(16, 16, 16, 0.62);
+    --stroke: rgba(255, 255, 255, 0.22);
+    --text: #f5f5f3;
+    --muted: #a5a5a1;
+    --accent: #ffffff;
+    --danger: #ffffff;
+}
+
+html, body, #app {
+    font-family: Bahnschrift, "Arial Narrow", sans-serif;
+    background: #090909;
+}
+
+.panel {
+    border: 1px solid var(--stroke);
+    border-radius: 0;
+    background: linear-gradient(135deg, rgba(30, 30, 30, 0.72), rgba(8, 8, 8, 0.5));
+    box-shadow: 0 28px 70px rgba(0, 0, 0, 0.48);
+    backdrop-filter: blur(12px);
+}
+
+.launch-panel::before {
+    left: 30px; right: auto; top: 27px; width: 36px; height: 2px;
+    background: #fff;
+}
+
+.launch-kicker { margin-top: 16px; color: #fff; font-weight: 700; }
+.launch-panel h1 { font-family: Bahnschrift, "Arial Narrow", sans-serif; font-weight: 700; letter-spacing: -0.055em; text-transform: uppercase; text-shadow: none; }
+.launch-panel h2 { color: #f5f5f3; }
+.subtitle { color: var(--muted); }
+
+input, button {
+    border-color: var(--stroke);
+    border-radius: 0;
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--text);
+    box-shadow: none;
+}
+input:focus { border-color: #fff; box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.12); }
+button:hover { border-color: #fff; background: rgba(255, 255, 255, 0.15); box-shadow: none; }
+button.active, .weapon-card.active { border-color: #fff; background: rgba(255, 255, 255, 0.17); box-shadow: none; }
+
+.room-item, .weapon-card, .key-bind-row {
+    border-color: rgba(255, 255, 255, 0.16);
+    border-radius: 0;
+    background: rgba(0, 0, 0, 0.2);
+}
+.room-item:hover, .weapon-card:hover { border-color: rgba(255, 255, 255, 0.68); }
+.room-join-button { border-color: #fff; background: #f5f5f3; color: #101010; }
+.room-join-button:hover { background: #cfcfcb; }
+
+.hud-grenade, .hud-ammo, .hud-weapon, .player-list {
+    border-color: var(--stroke); background: rgba(10, 10, 10, 0.48); color: var(--text);
+    box-shadow: 0 8px 22px rgba(0, 0, 0, 0.28); backdrop-filter: blur(10px);
+}
+.hud-grenade__title, .hud-ammo__key, .hud-ammo__status, .hud-weapon__title, .scoreboard-list .rank, .weapon-card__hint { color: var(--muted); }
+.hud-grenade__key kbd, .hud-ammo__key kbd { border-color: var(--stroke); background: rgba(255, 255, 255, 0.1); color: #fff; }
+.hud-health-wrap { filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.65)); }
+.hud-health-fill { background: linear-gradient(0deg, #777, #f5f5f3); }
+.crosshair { color: #fff; text-shadow: 0 1px 5px #000; }
+.scoreboard-list li { background: rgba(255, 255, 255, 0.06); }
+.scoreboard-list li.me { background: rgba(255, 255, 255, 0.16); border-color: rgba(255, 255, 255, 0.5); }
+.scoreboard-list .kd, .scoreboard-list .life { color: #f5f5f3; }
+
+.pause-menu-overlay { background: rgba(0, 0, 0, 0.45); backdrop-filter: blur(7px); }
+.pause-menu { border-color: var(--stroke); border-radius: 0; background: rgba(13, 13, 13, 0.72); color: var(--text); }
+
+@media (min-width: 821px) {
+    .pause-menu { width: min(80vw, 780px); }
+}
+
+.weapon-card__icon { border-color: rgba(255, 255, 255, 0.12); background: rgba(255, 255, 255, 0.07); }
+.weapon-card__svg, .weapon-card.active .weapon-card__svg { color: #f5f5f3; filter: none; }
+.weapon-card.active .weapon-card__hint { color: #d6d6d2; }
+.key-bind-row__btn { border-color: var(--stroke); background: rgba(255, 255, 255, 0.06); color: var(--text); }
+.key-bind-row__btn.is-listening { border-color: #fff; color: #fff; box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.1); }
+
+.touch-stick, .touch-action { border-color: rgba(255, 255, 255, 0.54); background: rgba(0, 0, 0, 0.4); box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4); }
+.touch-stick__knob, .touch-action--fire { border-color: rgba(255, 255, 255, 0.76); background: rgba(255, 255, 255, 0.22); box-shadow: none; }
+.touch-action:active, .touch-action.is-active { border-color: #fff; background: rgba(255, 255, 255, 0.4); }
+
+/* Barre de vie : lecture horizontale en bas à gauche. */
+.hud-health-wrap {
+    position: fixed !important;
+    top: auto !important;
+    right: auto !important;
+    bottom: max(24px, env(safe-area-inset-bottom)) !important;
+    left: max(24px, env(safe-area-inset-left)) !important;
+    width: min(30vw, 320px) !important;
+    min-width: 180px;
+    height: 22px !important;
+    min-height: 0 !important;
+    transform: none !important;
+    border-radius: 0 !important;
+}
+
+.hud-health-fill {
+    transform-origin: left center !important;
+    background: #d93636 !important;
+    border-radius: 0 !important;
+}
+
+/* Informations de combat regroupées en bas à droite. */
+.hud-right {
+    position: fixed !important;
+    top: auto !important;
+    right: max(24px, env(safe-area-inset-right)) !important;
+    bottom: max(24px, env(safe-area-inset-bottom)) !important;
+    left: auto !important;
+}
+
+/* Scoreboard aligné sur la même marge supérieure droite. */
+.player-list {
+    top: max(24px, env(safe-area-inset-top));
+    right: max(24px, env(safe-area-inset-right));
+    bottom: auto;
+    left: auto;
+}
+
+/* Munition : pictogramme de cartouche à côté du compteur. */
+.hud-ammo__icon {
+    width: 40px;
+    height: 30px;
+    flex: 0 0 auto;
+    color: #f5f5f3;
+}
+
+.hud-ammo__round { color: #f4bd24; }
+.hud-ammo__tip, .hud-ammo__case { fill: currentColor; }
+.hud-ammo__neck, .hud-ammo__shoulder, .hud-ammo__base { fill: #ffd767; }
+.hud-ammo__groove { fill: none; stroke: rgba(91, 57, 4, 0.74); stroke-width: 1.2; }
+
+.hud-ammo__count {
+    min-width: 0;
+    text-align: left;
+}
+
+/* Interfaces uniquement : contours géométriques, sans angles arrondis. */
+.hud-grenade, .hud-ammo, .hud-weapon, .player-list, .scoreboard-list li,
+.hud-grenade__icon-wrap, .hud-grenade__key kbd, .hud-ammo__key kbd,
+.hud-health-wrap, .hud-health-fill, .hud-health-bar, .kill-feed__item,
+.key-bind-row__btn, .weapon-card__icon, .respawn-notice, .death-weapon,
+.touch-stick, .touch-stick__knob, .touch-action {
+    border-radius: 0;
 }

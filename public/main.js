@@ -11,6 +11,7 @@ import { initializeKeyBindingUi, updateHudKeyHints } from "./js/input/keybinding
 import { syncFullscreenButton } from "./js/input/fullscreen.js";
 import { bindTouchControls, syncTouchControls } from "./js/input/touch-controls.js";
 import { createSocketClient } from "./js/net/socket-client.js";
+import { createSoundController } from "./js/audio/sound-controller.js";
 import { initPhysics } from "./js/physics/rapier-physics.js";
 import { createEffectsController } from "./js/render/effects.js";
 import { createWorldRenderer } from "./js/render/world-renderer.js";
@@ -40,6 +41,7 @@ function resizeRendererToViewport() {
 
 ctx.controllers.world = createWorldRenderer(ctx);
 ctx.controllers.effects = createEffectsController(ctx);
+ctx.controllers.sound = createSoundController(ctx);
 ctx.controllers.remotePlayers = createRemotePlayersController(ctx);
 ctx.controllers.weapons = createWeaponsController(ctx);
 ctx.controllers.hud = createHudController(ctx);
@@ -114,6 +116,7 @@ function animate() {
   ctx.controllers.effects.update(delta);
   ctx.controllers.grenades.update(delta, time);
   ctx.controllers.world.update(time, delta);
+  ctx.controllers.sound.updateListener();
   ctx.renderer.render(ctx.scene, ctx.camera);
 }
 

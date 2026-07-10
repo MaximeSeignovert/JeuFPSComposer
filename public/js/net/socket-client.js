@@ -167,6 +167,7 @@ export function createSocketClient(ctx) {
         ctx.controllers.effects.spawnKnifeSlash(msg.origin, slashDirection, false);
         return;
       }
+      ctx.controllers.sound?.playShot(msg.weapon, msg.origin, true);
       ctx.controllers.effects.spawnMuzzleFlash(msg.origin);
       msg.shots.forEach((shot) => {
         if (!shot?.direction) return;

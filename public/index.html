@@ -118,7 +118,33 @@
             role="status"
             aria-label="Munitions"
           >
-            <span id="hudAmmoCount" class="hud-ammo__count">20/20</span>
+            <svg class="hud-ammo__icon" viewBox="0 0 50 32" aria-hidden="true">
+              <g class="hud-ammo__round hud-ammo__round--large">
+                <path class="hud-ammo__tip" d="M4 10C4.2 5.8 5.4 1.8 7 0c1.6 1.8 2.8 5.8 3 10H4Z" />
+                <rect class="hud-ammo__neck" x="4" y="10" width="6" height="3" />
+                <path class="hud-ammo__shoulder" d="M3 13h8l2 4H1l2-4Z" />
+                <path class="hud-ammo__case" d="M1 17h12v12H1V17Z" />
+                <rect class="hud-ammo__base" x="0" y="29" width="14" height="3" />
+                <path class="hud-ammo__groove" d="M1 20h12M1 27h12" />
+              </g>
+              <g class="hud-ammo__round hud-ammo__round--medium" transform="translate(18 0)">
+                <path class="hud-ammo__tip" d="M4 10C4.2 5.8 5.4 1.8 7 0c1.6 1.8 2.8 5.8 3 10H4Z" />
+                <rect class="hud-ammo__neck" x="4" y="10" width="6" height="3" />
+                <path class="hud-ammo__shoulder" d="M3 13h8l2 4H1l2-4Z" />
+                <path class="hud-ammo__case" d="M1 17h12v12H1V17Z" />
+                <rect class="hud-ammo__base" x="0" y="29" width="14" height="3" />
+                <path class="hud-ammo__groove" d="M1 20h12M1 27h12" />
+              </g>
+              <g class="hud-ammo__round hud-ammo__round--small" transform="translate(36 0)">
+                <path class="hud-ammo__tip" d="M4 10C4.2 5.8 5.4 1.8 7 0c1.6 1.8 2.8 5.8 3 10H4Z" />
+                <rect class="hud-ammo__neck" x="4" y="10" width="6" height="3" />
+                <path class="hud-ammo__shoulder" d="M3 13h8l2 4H1l2-4Z" />
+                <path class="hud-ammo__case" d="M1 17h12v12H1V17Z" />
+                <rect class="hud-ammo__base" x="0" y="29" width="14" height="3" />
+                <path class="hud-ammo__groove" d="M1 20h12M1 27h12" />
+              </g>
+            </svg>
+            <span id="hudAmmoCount" class="hud-ammo__count">20</span>
             <span class="hud-ammo__key"><kbd id="hudReloadKey">R</kbd> recharger</span>
             <span id="hudReloadStatus" class="hud-ammo__status"></span>
           </div>
@@ -244,6 +270,7 @@
       </div>
 
       <section id="crosshair" class="crosshair hidden">+</section>
+      <section id="weaponShotLoader" class="weapon-shot-loader hidden" aria-hidden="true"></section>
       <section id="damageOverlay" class="damage-overlay hidden"></section>
       <section id="hitmarker" class="hitmarker hidden">
         <span></span>

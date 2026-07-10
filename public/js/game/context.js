@@ -15,7 +15,6 @@ export function createGameContext({ dom, state, sceneSetup, viewModel, mapConfig
     controllers: {},
     worldColliders: [],
     mapAnimators: [],
-    jumpPads: [],
     grenadePickups: new Map(),
     grenadePickupMeshes: new Map(),
     remoteMeshes: new Map(),
@@ -30,6 +29,8 @@ export function createGameContext({ dom, state, sceneSetup, viewModel, mapConfig
     smoothedMoveVelocity: new THREE.Vector3(),
     lastNetworkSend: 0,
     hitmarkerTimer: null,
-    damageOverlayTimer: null
+    damageOverlayTimer: null,
+    soundListenerPosition: new THREE.Vector3(),
+    soundListenerForward: new THREE.Vector3()
   };
 }

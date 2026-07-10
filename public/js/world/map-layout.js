@@ -6,7 +6,7 @@ export const MAP_LAYOUT = {
     depth: 14,
     topY: 3.8,
     thickness: 1.2,
-    material: { color: 0xe4d1a9, roughness: 0.72, metalness: 0.03 }
+    material: { color: 0x747873, roughness: 0.82, metalness: 0.1 }
   },
   ramp: {
     width: 8.4,
@@ -14,11 +14,11 @@ export const MAP_LAYOUT = {
     topY: 3.8,
     baseY: 0,
     thickness: 0.34,
-    material: { color: 0xffc74d, roughness: 0.72, metalness: 0.02 }
+    material: { color: 0x7a8569, roughness: 0.78, metalness: 0.12 }
   },
-  coverMaterial: { color: 0x4f80d9, roughness: 0.8, metalness: 0.02 },
-  pillarMaterial: { color: 0xff6a6a, roughness: 0.76, metalness: 0.03 },
-  wallMaterial: { color: 0x8ec66b, roughness: 0.9 },
+  coverMaterial: { color: 0x526d7c, roughness: 0.86, metalness: 0.08 },
+  pillarMaterial: { color: 0x8a735d, roughness: 0.8, metalness: 0.12 },
+  wallMaterial: { color: 0x596957, roughness: 0.92, metalness: 0.04 },
   coverBlocks: [
     { x: -30, z: -24, width: 5.4, height: 2.6, depth: 3.4, colorOffset: 0.02 },
     { x: -30, z: -8, width: 3.8, height: 2.2, depth: 3.2, colorOffset: -0.08 },
@@ -71,22 +71,20 @@ export const MAP_LAYOUT = {
     { x: -18, z: 0 },
     { x: 18, z: 0 }
   ],
+  wallPlatforms: [
+    { x: 0, z: -39, width: 15, depth: 4, axis: "x" },
+    { x: 0, z: 39, width: 15, depth: 4, axis: "x" }
+  ],
+  ladders: [
+    { x: 0, z: -25.16, normalX: 0, normalZ: -1, width: 1.4, height: 5.15 },
+    { x: 0, z: 25.16, normalX: 0, normalZ: 1, width: 1.4, height: 5.15 },
+    { x: -19.16, z: 0, normalX: -1, normalZ: 0, width: 1.4, height: 5.15 },
+    { x: 19.16, z: 0, normalX: 1, normalZ: 0, width: 1.4, height: 5.15 }
+  ],
   boundaryWalls: [
     { x: -42, y: 2, z: 0, width: 2, height: 4, depth: 85 },
     { x: 42, y: 2, z: 0, width: 2, height: 4, depth: 85 },
     { x: 0, y: 2, z: -42, width: 85, height: 4, depth: 2 },
     { x: 0, y: 2, z: 42, width: 85, height: 4, depth: 2 }
-  ],
-  jumpPads: [
-    { x: -26, z: 0, color: 0x68e6ff },
-    { x: 26, z: 0, color: 0x7fff95 },
-    { x: 0, z: -30, color: 0xff89cf },
-    { x: 0, z: 30, color: 0xffd05a }
-  ],
-  spinnerProps: [
-    { x: -14, z: -14, color: 0x74f7ff },
-    { x: 14, z: 14, color: 0xff8ad7 },
-    { x: -14, z: 14, color: 0xffd673 },
-    { x: 14, z: -14, color: 0x8cff7b }
   ]
 };

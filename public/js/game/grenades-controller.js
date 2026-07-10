@@ -177,6 +177,7 @@ export function createGrenadesController(ctx) {
       ctx.activeGrenades.delete(grenadeId);
     }
     createExplosionEffect(position, radius);
+    ctx.controllers.sound?.playExplosion(position);
     if (shouldNotify) ctx.controllers.socket?.sendGrenadeExplode({ id: grenadeId, position });
   }
 

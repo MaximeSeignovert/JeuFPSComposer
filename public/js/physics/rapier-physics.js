@@ -12,6 +12,11 @@ function quatFromZRotation(angle) {
   return { x: 0, y: 0, z: Math.sin(half), w: Math.cos(half) };
 }
 
+function quatFromXRotation(angle) {
+  const half = angle * 0.5;
+  return { x: Math.sin(half), y: 0, z: 0, w: Math.cos(half) };
+}
+
 function vectorFrom(input, fallback = { x: 0, y: 0, z: 0 }) {
   return {
     x: Number(input?.x) || fallback.x,
@@ -73,6 +78,20 @@ function addWorldColliders(world, mapConfig, mapHalfSize) {
     rotation: quatFromZRotation(-rampAngle)
   });
 
+  const centralRailHeight = 0.72;
+  const centralRailThickness = 0.12;
+  const centralRailInset = 0.24;
+  for (const side of [-1, 1]) {
+    addFixedCuboid(world, {
+      x: mapConfig.platform.x,
+      y: mapConfig.platform.topY + centralRailHeight,
+      z: mapConfig.platform.z + side * (mapConfig.platform.depth * 0.5 - centralRailInset),
+      hx: (mapConfig.platform.width - centralRailInset * 2) * 0.5,
+      hy: centralRailThickness * 0.5,
+      hz: centralRailThickness * 0.5
+    });
+  }
+
   mapConfig.coverBlocks.forEach((block) => {
     addFixedCuboid(world, {
       x: block.x,
@@ -113,6 +132,49 @@ function addWorldColliders(world, mapConfig, mapHalfSize) {
       hy: 2.6,
       hz: 1.1
     });
+  });
+
+  mapConfig.wallPlatforms.forEach(({ x, z, width, depth, axis }) => {
+    const topY = mapConfig.platform.topY;
+    const thickness = 0.65;
+    const rampRun = 5.4;
+    const rampThickness = 0.34;
+    const rampRise = topY;
+    const rampAngle = Math.atan2(rampRise, rampRun);
+    const rampLength = Math.hypot(rampRun, rampRise);
+    const alongX = axis === "x";
+
+    addFixedCuboid(world, {
+      x,
+      y: topY - thickness * 0.5,
+      z,
+      hx: (alongX ? width : depth) * 0.5,
+      hy: thickness * 0.5,
+      hz: (alongX ? depth : width) * 0.5
+    });
+
+    const offset = width * 0.5 + rampRun * 0.5;
+    const rampY = (topY + rampThickness * 0.5) * 0.5;
+    const rampHalfDepth = (alongX ? depth : width) * 0.5;
+    if (alongX) {
+      addFixedCuboid(world, {
+        x: x - offset, y: rampY, z, hx: rampLength * 0.5, hy: rampThickness * 0.5, hz: rampHalfDepth,
+        rotation: quatFromZRotation(rampAngle)
+      });
+      addFixedCuboid(world, {
+        x: x + offset, y: rampY, z, hx: rampLength * 0.5, hy: rampThickness * 0.5, hz: rampHalfDepth,
+        rotation: quatFromZRotation(-rampAngle)
+      });
+    } else {
+      addFixedCuboid(world, {
+        x, y: rampY, z: z - offset, hx: rampHalfDepth, hy: rampThickness * 0.5, hz: rampLength * 0.5,
+        rotation: quatFromXRotation(-rampAngle)
+      });
+      addFixedCuboid(world, {
+        x, y: rampY, z: z + offset, hx: rampHalfDepth, hy: rampThickness * 0.5, hz: rampLength * 0.5,
+        rotation: quatFromXRotation(rampAngle)
+      });
+    }
   });
 
   mapConfig.boundaryWalls.forEach((wall) => {

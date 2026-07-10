@@ -3,6 +3,7 @@ import { KNIFE_MOVE_SPEED_MULTIPLIER, MAP_HALF_SIZE } from "../config.js";
 import { keyBindings } from "../input/keybinding-ui.js";
 
 const PLAYER_COLLISION_RADIUS = 0.34;
+const LADDER_CLIMB_SPEED = 4.8;
 
 export function createPlayerController(ctx) {
   const { camera, state } = ctx;
@@ -14,19 +15,17 @@ export function createPlayerController(ctx) {
     state.onGround = false;
   }
 
-  function applyJumpPads() {
-    if (!state.onGround) return;
-    const now = performance.now();
-    if (now - state.lastJumpPadBoostAt < 350) return;
-    for (const pad of ctx.jumpPads) {
-      const dx = camera.position.x - pad.x;
-      const dz = camera.position.z - pad.z;
-      if (dx * dx + dz * dz > pad.radius * pad.radius) continue;
-      state.verticalVelocity = Math.max(state.verticalVelocity, pad.boost);
-      state.onGround = false;
-      state.lastJumpPadBoostAt = now;
-      break;
+  function findNearbyLadder(position) {
+    for (const ladder of ctx.mapConfig.ladders || []) {
+      const dx = position.x - ladder.x;
+      const dz = position.z - ladder.z;
+      const tangentDistance = dx * -ladder.normalZ + dz * ladder.normalX;
+      const outwardDistance = dx * ladder.normalX + dz * ladder.normalZ;
+      if (Math.abs(tangentDistance) > ladder.width * 0.5 + PLAYER_COLLISION_RADIUS) continue;
+      if (outwardDistance < -0.25 || outwardDistance > 0.9) continue;
+      return ladder;
     }
+    return null;
   }
 
   function updateMovement(delta) {
@@ -59,7 +58,33 @@ export function createPlayerController(ctx) {
     ctx.smoothedMoveVelocity.lerp(targetVelocity, smoothing);
     if (hasInput) ctx.smoothedMoveVelocity.clampLength(0, currentMoveSpeed);
 
-    state.verticalVelocity -= state.gravity * delta;
+    const feetPosition = {
+      x: camera.position.x,
+      y: camera.position.y - state.playerHeight,
+      z: camera.position.z
+    };
+    const ladder = findNearbyLadder(feetPosition);
+    if (ladder && fwd !== 0 && feetPosition.y < ladder.height) {
+      if (fwd > 0 && feetPosition.y >= ladder.height - 0.5) {
+        ctx.physics.setPlayerPosition({
+          x: ladder.x - ladder.normalX * 0.18,
+          y: ladder.height + 0.03,
+          z: ladder.z - ladder.normalZ * 0.18
+        });
+        const cameraPosition = ctx.physics.getPlayerCameraPosition();
+        camera.position.set(cameraPosition.x, cameraPosition.y, cameraPosition.z);
+        state.verticalVelocity = 0;
+        state.onGround = true;
+        ctx.smoothedMoveVelocity.set(0, 0, 0);
+        return;
+      }
+
+      state.verticalVelocity = fwd * LADDER_CLIMB_SPEED;
+      state.onGround = false;
+      ctx.smoothedMoveVelocity.set(0, 0, 0);
+    } else {
+      state.verticalVelocity -= state.gravity * delta;
+    }
     const result = ctx.physics.movePlayer({
       horizontalVelocity: ctx.smoothedMoveVelocity,
       verticalVelocity: state.verticalVelocity,
@@ -73,8 +98,6 @@ export function createPlayerController(ctx) {
     } else {
       state.onGround = false;
     }
-    applyJumpPads();
-
     const horizontalSpeed = ctx.smoothedMoveVelocity.length();
     state.movementBlend = THREE.MathUtils.lerp(
       state.movementBlend,

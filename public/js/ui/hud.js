@@ -13,6 +13,7 @@ export function createHudController(ctx) {
   const {
     canvas,
     crosshair,
+    weaponShotLoader,
     deathCountdown,
     deathKillerName,
     deathKillerWeapon,
@@ -77,7 +78,7 @@ export function createHudController(ctx) {
     if (healthMeter) healthMeter.setAttribute("aria-valuenow", String(clampedHealth));
     if (hudHealthFill) {
       const ratio = clampedHealth / 100;
-      hudHealthFill.style.transform = `scaleY(${ratio})`;
+      hudHealthFill.style.transform = `scaleX(${ratio})`;
       hudHealthFill.style.filter = clampedHealth <= 25 ? "brightness(0.85)" : "";
     }
   }
@@ -99,13 +100,13 @@ export function createHudController(ctx) {
     const magazineSize = weapons.getMagazineSize(weapon);
     const reloading = weapons.isReloadingWeapon(weapon);
     const remainingMs = Math.max(0, state.reloadUntil - performance.now());
-    if (hudAmmoCount) hudAmmoCount.textContent = `${ammo}/${magazineSize}`;
+    if (hudAmmoCount) hudAmmoCount.textContent = String(ammo);
     if (hudReloadStatus) hudReloadStatus.textContent = reloading ? `Reload ${Math.ceil(remainingMs / 1000)}s` : "";
     hudAmmo.classList.toggle("hud-ammo--empty", ammo <= 0);
     hudAmmo.classList.toggle("hud-ammo--reloading", reloading);
     hudAmmo.setAttribute(
       "aria-label",
-      reloading ? `Rechargement ${Math.ceil(remainingMs / 1000)} secondes` : `${ammo} balles sur ${magazineSize}`
+      reloading ? `Rechargement ${Math.ceil(remainingMs / 1000)} secondes` : `${ammo} balles restantes`
     );
     if (touchReloadBtn) {
       touchReloadBtn.disabled = reloading || ammo >= magazineSize;
@@ -137,6 +138,26 @@ export function createHudController(ctx) {
     sniperScope.classList.toggle("hidden", !shouldZoom);
     const showCrosshair = state.joined && state.isAlive && !state.pauseOpen && !shouldZoom;
     crosshair.classList.toggle("hidden", !showCrosshair);
+  }
+
+  function updateShotCooldown() {
+    if (!weaponShotLoader) return;
+    const duration = state.shotCooldownDuration;
+    const remaining = state.shotCooldownUntil - performance.now();
+    const active =
+      state.joined &&
+      state.isAlive &&
+      !state.pauseOpen &&
+      (state.weapon === "shotgun" || state.weapon === "sniper") &&
+      state.shotCooldownWeapon === state.weapon &&
+      duration > 0 &&
+      remaining > 0 &&
+      !ctx.controllers.weapons.isReloadingWeapon();
+
+    weaponShotLoader.classList.toggle("hidden", !active);
+    if (!active) return;
+    const progress = THREE.MathUtils.clamp(1 - remaining / duration, 0, 1);
+    weaponShotLoader.style.setProperty("--shot-cooldown-progress", progress.toFixed(3));
   }
 
   function updateRespawnNotice() {
@@ -315,6 +336,7 @@ export function createHudController(ctx) {
 
   function updateFrame() {
     updateZoom();
+    updateShotCooldown();
     updateRespawnNotice();
     updateDeathScreen();
   }

@@ -9,6 +9,7 @@ export const resumeBtn = document.getElementById("resumeBtn");
 export const hud = document.getElementById("hud");
 export const killFeed = document.getElementById("killFeed");
 export const crosshair = document.getElementById("crosshair");
+export const weaponShotLoader = document.getElementById("weaponShotLoader");
 export const damageOverlay = document.getElementById("damageOverlay");
 export const hitmarker = document.getElementById("hitmarker");
 export const sniperScope = document.getElementById("sniperScope");
