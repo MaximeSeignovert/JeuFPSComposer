@@ -200,6 +200,7 @@ export function createWeaponsController(ctx) {
     if (stats.melee) {
       const direction = { x: baseDirection.x, y: baseDirection.y, z: baseDirection.z };
       knifeAttackTime = KNIFE_ATTACK_DURATION;
+      ctx.controllers.sound?.playShot(state.weapon);
       ctx.controllers.effects.traceMeleeSweep(aimOrigin, direction, stats.range, true, stats.damage, {
         halfAngle: stats.swingHalfAngle,
         targetRadius: stats.swingTargetRadius

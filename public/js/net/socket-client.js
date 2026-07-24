@@ -164,6 +164,7 @@ export function createSocketClient(ctx) {
       if (!msg.origin || !Array.isArray(msg.shots)) return;
       if (msg.weapon === "knife") {
         const slashDirection = msg.shots.find((shot) => shot?.direction)?.direction;
+        ctx.controllers.sound?.playShot(msg.weapon, msg.origin, true);
         ctx.controllers.effects.spawnKnifeSlash(msg.origin, slashDirection, false);
         return;
       }
