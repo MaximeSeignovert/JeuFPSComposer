@@ -22,7 +22,9 @@ const DEV_BOT_TRAJECTORY_SPEED = 1.1;
 const SPAWN_MARGIN = 4;
 const MAP_HALF_SIZE = 40;
 const GRENADE_FUSE_MS = 1600;
-const GRENADE_THROW_SPEED = 16;
+const GRENADE_THROW_SPEED = 32;
+const GRENADE_MIN_THROW_SPEED = 14;
+const GRENADE_MAX_THROW_SPEED = 44;
 const GRENADE_BLAST_RADIUS = 8.5;
 const GRENADE_MAX_DAMAGE = 95;
 const GRENADE_PICKUP_RESPAWN_MS = 12000;
@@ -333,6 +335,10 @@ export class FpsRoom extends Room<{ state: FpsState }> {
     const origin = this.sanitizePosition(msg?.origin);
     const direction = this.sanitizePosition(msg?.direction);
     if (!grenadeId || this.state.activeGrenades.has(grenadeId) || !origin || !direction) return;
+    const requestedSpeed = Number(msg?.speed);
+    const throwSpeed = Number.isFinite(requestedSpeed)
+      ? Math.max(GRENADE_MIN_THROW_SPEED, Math.min(GRENADE_MAX_THROW_SPEED, requestedSpeed))
+      : GRENADE_THROW_SPEED;
 
     player.grenades = 0;
     const grenade = new ActiveGrenadeState();
@@ -347,7 +353,7 @@ export class FpsRoom extends Room<{ state: FpsState }> {
         ownerId: player.id,
         origin,
         direction,
-        speed: GRENADE_THROW_SPEED,
+        speed: throwSpeed,
         fuseMs: GRENADE_FUSE_MS
       }
     });

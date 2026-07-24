@@ -1,5 +1,6 @@
 import * as THREE from "https://unpkg.com/three@0.164.1/build/three.module.js";
 import {
+  PRIMARY_WEAPONS,
   VIEW_RECOIL_BOB_SUPPRESS_K,
   VIEW_RECOIL_DECAY,
   VIEW_RECOIL_NORM_CAP,
@@ -12,7 +13,7 @@ const KNIFE_ATTACK_DURATION = 0.34;
 
 export function createWeaponsController(ctx) {
   const { camera, state, viewModel } = ctx;
-  const { touchAimBtn, weaponChoice, touchInput } = ctx.dom;
+  const { touchAimBtn, touchInput } = ctx.dom;
   let aimViewBlend = 0;
   let knifeAttackTime = 0;
 
@@ -21,7 +22,8 @@ export function createWeaponsController(ctx) {
   }
 
   function hasMagazine(weapon = state.weapon) {
-    return !getWeaponStats(weapon).melee;
+    const stats = getWeaponStats(weapon);
+    return !stats.melee && !stats.throwable;
   }
 
   function getMagazineSize(weapon = state.weapon) {
@@ -116,23 +118,103 @@ export function createWeaponsController(ctx) {
     viewModel.userData.activeWeapon = key;
   }
 
-  function selectWeapon(weapon) {
-    state.weapon = weapon;
+  function normalizeWeaponSlotIndex(index) {
+    const slotCount = state.weaponSlots.length;
+    if (slotCount === 0) return -1;
+    return ((Math.trunc(index) % slotCount) + slotCount) % slotCount;
+  }
+
+  function equipWeaponSlot(index) {
+    const slotIndex = normalizeWeaponSlotIndex(index);
+    if (slotIndex < 0) return false;
+    const weapon = state.weaponSlots[slotIndex];
+    if (!WEAPON_STATS[weapon]) return false;
+
+    const weaponChanged = state.weapon !== weapon;
+    const slotChanged = state.activeWeaponSlot !== slotIndex;
+    if (!weaponChanged && !slotChanged) return false;
+
+    cancelPrimaryFire();
     state.isAiming = false;
+    knifeAttackTime = 0;
+    state.weapon = weapon;
+    state.activeWeaponSlot = slotIndex;
     cancelReload();
-    clearShotCooldown();
     ensureWeaponAmmo(weapon);
     ctx.controllers.hud?.updateAmmo();
     touchAimBtn?.classList.remove("is-active");
     setActiveWeaponModel(weapon);
-    weaponChoice.querySelectorAll("button").forEach((b) => b.classList.remove("active"));
-    weaponChoice.querySelector(`button[data-weapon="${weapon}"]`)?.classList.add("active");
-    ctx.controllers.socket?.sendWeaponSelect(weapon);
+    ctx.controllers.hud?.syncWeaponChoice();
+    if (weaponChanged && weapon !== "grenade") ctx.controllers.socket?.sendWeaponSelect(weapon);
+    return true;
+  }
+
+  function selectPrimaryWeapon(weapon) {
+    if (!PRIMARY_WEAPONS.includes(weapon)) return false;
+    state.weaponSlots[0] = weapon;
+    if (state.activeWeaponSlot === 0 && state.weapon === weapon) {
+      ctx.controllers.hud?.syncWeaponChoice();
+      return false;
+    }
+    return equipWeaponSlot(0);
+  }
+
+  function cycleWeaponSlot(direction = 1) {
+    if (!state.joined || state.pauseOpen || !state.isAlive || state.weaponSlots.length < 2) return false;
+    const step = Number(direction) < 0 ? -1 : 1;
+    return equipWeaponSlot(state.activeWeaponSlot + step);
+  }
+
+  function equipPrimaryWeapon() {
+    return equipWeaponSlot(0);
+  }
+
+  function equipGrenade() {
+    const grenadeSlot = state.weaponSlots.indexOf("grenade");
+    if (grenadeSlot < 0 || state.grenadesHeld < 1) return false;
+    return equipWeaponSlot(grenadeSlot);
+  }
+
+  function setGrenadeSlotAvailable(available) {
+    const grenadeSlot = state.weaponSlots.indexOf("grenade");
+    if (available) {
+      if (grenadeSlot < 0) state.weaponSlots.push("grenade");
+      ctx.controllers.hud?.syncWeaponChoice();
+      ctx.controllers.hud?.updateGrenade();
+      return;
+    }
+    if (grenadeSlot < 0) return;
+
+    const wasActive = state.activeWeaponSlot === grenadeSlot || state.weapon === "grenade";
+    state.weaponSlots.splice(grenadeSlot, 1);
+    if (wasActive) {
+      state.activeWeaponSlot = Math.min(grenadeSlot, state.weaponSlots.length - 1);
+      equipWeaponSlot(0);
+    } else if (state.activeWeaponSlot > grenadeSlot) {
+      state.activeWeaponSlot -= 1;
+    }
+    ctx.controllers.hud?.syncWeaponChoice();
+    ctx.controllers.hud?.updateGrenade();
+  }
+
+  function initializeWeaponSlots(primaryWeapon = "ak47") {
+    const primary = PRIMARY_WEAPONS.includes(primaryWeapon) ? primaryWeapon : "ak47";
+    state.weaponSlots = [primary, "knife"];
+    state.activeWeaponSlot = 0;
+    state.weapon = primary;
+    setActiveWeaponModel(primary);
+    ctx.controllers.hud?.syncWeaponChoice();
   }
 
   function beginPrimaryFire() {
     if (!state.joined || state.pauseOpen || !state.isAlive || !hasGameLookInput()) return false;
     const stats = getWeaponStats();
+    if (stats.throwable) {
+      if (!ctx.controllers.grenades?.beginThrowCharge()) return false;
+      state.primaryFireHeld = true;
+      state.isFiring = true;
+      return true;
+    }
     state.primaryFireHeld = true;
     state.isFiring = true;
     shoot();
@@ -141,8 +223,17 @@ export function createWeaponsController(ctx) {
   }
 
   function endPrimaryFire() {
+    const shouldReleaseGrenade =
+      state.weapon === "grenade" && state.primaryFireHeld && ctx.controllers.grenades?.isThrowCharging();
     state.primaryFireHeld = false;
     state.isFiring = false;
+    if (shouldReleaseGrenade) ctx.controllers.grenades?.releaseThrowCharge();
+  }
+
+  function cancelPrimaryFire() {
+    state.primaryFireHeld = false;
+    state.isFiring = false;
+    ctx.controllers.grenades?.cancelThrowCharge();
   }
 
   function endPrimaryFireFromMouseEvent(event) {
@@ -291,6 +382,22 @@ export function createWeaponsController(ctx) {
       viewModel.userData.armGroup.visible = aimViewBlend < 0.8;
     }
 
+    if (state.weapon === "grenade") {
+      const charge = ctx.controllers.grenades?.getThrowChargeProgress() || 0;
+      const airY = state.onGround ? 0 : -0.03;
+      viewModel.position.set(
+        0.34 + s95 * bobX * bobIntensity + charge * 0.08,
+        -0.24 + c75 * bobY * bobIntensity + airY + charge * 0.07,
+        -0.48 + s15 * 0.004 * bobIntensity + charge * 0.04
+      );
+      viewModel.rotation.set(
+        -0.08 + c8 * bobRotX * bobIntensity - charge * 0.18,
+        -0.12 + s67 * bobRotY * bobIntensity,
+        -0.24 + s85 * bobRotZ * bobIntensity - charge * 0.16
+      );
+      return;
+    }
+
     if (state.weapon === "knife") {
       const p = knifeAttackTime > 0 ? 1 - knifeAttackTime / KNIFE_ATTACK_DURATION : 1;
       const slashP = THREE.MathUtils.clamp(p / 0.72, 0, 1);
@@ -400,17 +507,24 @@ export function createWeaponsController(ctx) {
   return {
     beginPrimaryFire,
     cancelReload,
+    cancelPrimaryFire,
     clearShotCooldown,
+    cycleWeaponSlot,
     endPrimaryFire,
     endPrimaryFireFromMouseEvent,
+    equipGrenade,
+    equipPrimaryWeapon,
+    equipWeaponSlot,
     ensureWeaponAmmo,
     getMagazineSize,
     getReloadProgress,
     getWeaponStats,
     isReloadingWeapon,
+    initializeWeaponSlots,
     refillAllMagazines,
     reloadWeapon,
-    selectWeapon,
+    selectPrimaryWeapon,
+    setGrenadeSlotAvailable,
     setActiveWeaponModel,
     shoot,
     update

@@ -11,12 +11,14 @@ import {
   touchJumpBtn,
   touchMoveStick,
   touchPauseBtn,
-  touchReloadBtn
+  touchReloadBtn,
+  touchWeaponSwitchBtn
 } from "../dom.js";
 import { state } from "../state.js";
 import { syncFullscreenButton, toggleFullscreenMode } from "./fullscreen.js";
 
 let updateHudKeyHints = () => {};
+let cancelPrimaryFire = () => {};
 
 export function shouldUsePointerLock() {
   return !mobileControlsQuery.matches;
@@ -40,6 +42,7 @@ function resetTouchStick(stick, data) {
 }
 
 export function resetTouchInput() {
+  cancelPrimaryFire();
   resetTouchStick(touchMoveStick, touchInput.move);
   touchInput.look.pointerId = null;
   touchInput.look.lastX = 0;
@@ -171,6 +174,7 @@ function bindTouchButton(button, onDown, onUp, onMove) {
 
 export function bindTouchControls(options) {
   updateHudKeyHints = options.updateHudKeyHints;
+  cancelPrimaryFire = options.cancelPrimaryFire;
   bindTouchStick(touchMoveStick, touchInput.move);
   bindTouchLookSurface();
   bindTouchButton(
@@ -179,12 +183,17 @@ export function bindTouchControls(options) {
       if (!options.beginPrimaryFire()) return;
       beginTouchLook(event, touchFireBtn);
       touchFireBtn?.classList.add("is-active");
-      if (!options.getWeaponStats().auto) {
+      const stats = options.getWeaponStats();
+      if (!stats.auto && !stats.chargeable) {
         touchFireBtn?.classList.remove("is-active");
       }
     },
     (event) => {
-      options.endPrimaryFire();
+      if (event.type === "pointercancel") {
+        options.cancelPrimaryFire();
+      } else {
+        options.endPrimaryFire();
+      }
       endTouchLook(event);
       touchFireBtn?.classList.remove("is-active");
     },
@@ -196,8 +205,9 @@ export function bindTouchControls(options) {
     touchAimBtn?.classList.toggle("is-active", state.isAiming);
   });
   bindTouchButton(touchJumpBtn, options.jump);
-  bindTouchButton(touchGrenadeBtn, options.throwGrenade);
+  bindTouchButton(touchGrenadeBtn, options.equipGrenade);
   bindTouchButton(touchReloadBtn, options.reloadWeapon);
+  bindTouchButton(touchWeaponSwitchBtn, () => options.cycleWeaponSlot(1));
   bindTouchButton(touchPauseBtn, () => {
     if (state.joined) options.togglePauseMenu();
   });

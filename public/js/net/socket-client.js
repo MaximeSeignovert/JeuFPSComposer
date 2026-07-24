@@ -72,13 +72,13 @@ export function createSocketClient(ctx) {
       state.playerId = msg.id;
       state.roomId = msg.roomId;
       state.team = msg.team;
-      state.weapon = msg.weapon;
+      ctx.controllers.weapons.initializeWeaponSlots(msg.weapon);
       state.health = Number(msg.health) || 100;
       state.grenadesHeld = Math.max(0, Math.min(1, Number(msg.grenades) || 0));
+      ctx.controllers.weapons.setGrenadeSlotAvailable(state.grenadesHeld >= 1);
       ctx.controllers.weapons.refillAllMagazines();
       ctx.controllers.hud.setLocalAlive(msg.alive !== false);
       if (msg.spawn) ctx.controllers.player.applySpawn(msg.spawn);
-      ctx.controllers.weapons.setActiveWeaponModel(state.weapon);
       ctx.controllers.hud.syncWeaponChoice();
       ctx.controllers.hud.updateGrenade();
       ctx.controllers.hud.updateAmmo();
@@ -119,6 +119,7 @@ export function createSocketClient(ctx) {
 
     if (msg.type === "player:grenadeInventory") {
       state.grenadesHeld = Math.max(0, Math.min(1, Number(msg.count) || 0));
+      ctx.controllers.weapons.setGrenadeSlotAvailable(state.grenadesHeld >= 1);
       ctx.controllers.hud.updateGrenade();
       return;
     }
@@ -147,9 +148,11 @@ export function createSocketClient(ctx) {
       if (msg.spawn) ctx.controllers.player.applySpawn(msg.spawn);
       state.health = Number(msg.health) || 100;
       state.grenadesHeld = Math.max(0, Math.min(1, Number(msg.grenades) || 0));
+      ctx.controllers.weapons.setGrenadeSlotAvailable(state.grenadesHeld >= 1);
       state.respawnUntil = 0;
       ctx.controllers.weapons.refillAllMagazines();
       ctx.controllers.hud.setLocalAlive(msg.alive !== false);
+      ctx.controllers.weapons.equipPrimaryWeapon();
       ctx.controllers.hud.setPauseMenu(false);
       if (shouldUsePointerLock() && document.pointerLockElement !== canvas) canvas.requestPointerLock();
       ctx.controllers.hud.updateHealth();
@@ -223,8 +226,8 @@ export function createSocketClient(ctx) {
     send({ type: "grenade:pickup", pickupId });
   }
 
-  function sendGrenadeThrow({ id, origin, direction }) {
-    send({ type: "grenade:throw", id, origin, direction });
+  function sendGrenadeThrow({ id, origin, direction, speed }) {
+    send({ type: "grenade:throw", id, origin, direction, speed });
   }
 
   function sendHit({ targetId, damage }) {

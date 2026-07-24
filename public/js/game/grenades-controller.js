@@ -3,6 +3,7 @@ import { GRENADE_CONFIG } from "../config.js";
 
 export function createGrenadesController(ctx) {
   const { camera, scene, state } = ctx;
+  let throwChargeStartedAt = 0;
 
   function createGrenadePickupMesh() {
     const group = new THREE.Group();
@@ -220,9 +221,43 @@ export function createGrenadesController(ctx) {
     }
   }
 
-  function throwGrenade() {
+  function getThrowChargeProgress() {
+    if (!throwChargeStartedAt) return 0;
+    return THREE.MathUtils.clamp(
+      (performance.now() - throwChargeStartedAt) / GRENADE_CONFIG.throwChargeMs,
+      0,
+      1
+    );
+  }
+
+  function isThrowCharging() {
+    return throwChargeStartedAt > 0;
+  }
+
+  function beginThrowCharge() {
+    if (!state.joined || state.pauseOpen || !state.isAlive || state.weapon !== "grenade") return false;
+    if (state.grenadesHeld < 1 || !ctx.controllers.socket?.isOpen()) return false;
+    if (!throwChargeStartedAt) throwChargeStartedAt = performance.now();
+    ctx.controllers.hud?.updateGrenade();
+    return true;
+  }
+
+  function cancelThrowCharge() {
+    if (!throwChargeStartedAt) return;
+    throwChargeStartedAt = 0;
+    ctx.controllers.hud?.updateGrenade();
+  }
+
+  function releaseThrowCharge() {
+    if (!throwChargeStartedAt) return false;
+    const chargeProgress = getThrowChargeProgress();
+    throwChargeStartedAt = 0;
+    return throwGrenade(chargeProgress);
+  }
+
+  function throwGrenade(chargeProgress = 0) {
     if (!state.joined || state.pauseOpen || !state.isAlive) return;
-    if (state.grenadesHeld < 1 || !ctx.controllers.socket?.isOpen()) return;
+    if (state.grenadesHeld < 1 || state.weapon !== "grenade" || !ctx.controllers.socket?.isOpen()) return false;
 
     const throwDirection = new THREE.Vector3();
     camera.getWorldDirection(throwDirection);
@@ -236,22 +271,31 @@ export function createGrenadesController(ctx) {
     );
     const grenadeId = `${state.playerId || "local"}-${Date.now()}-${state.grenadeSequence}`;
     state.grenadeSequence += 1;
+    const clampedCharge = THREE.MathUtils.clamp(Number(chargeProgress) || 0, 0, 1);
+    const throwSpeed = THREE.MathUtils.lerp(
+      GRENADE_CONFIG.minThrowSpeed,
+      GRENADE_CONFIG.maxThrowSpeed,
+      clampedCharge
+    );
     const payload = {
       id: grenadeId,
       ownerId: state.playerId,
       origin: { x: origin.x, y: origin.y, z: origin.z },
       direction: { x: throwDirection.x, y: throwDirection.y, z: throwDirection.z },
-      speed: GRENADE_CONFIG.throwSpeed,
+      speed: throwSpeed,
       fuseMs: GRENADE_CONFIG.fuseMs
     };
     spawnThrown(payload);
     state.grenadesHeld = 0;
+    ctx.controllers.weapons?.setGrenadeSlotAvailable(false);
     ctx.controllers.hud?.updateGrenade();
     ctx.controllers.socket?.sendGrenadeThrow({
       id: grenadeId,
       origin: payload.origin,
-      direction: payload.direction
+      direction: payload.direction,
+      speed: throwSpeed
     });
+    return true;
   }
 
   function update(delta, time) {
@@ -276,5 +320,15 @@ export function createGrenadesController(ctx) {
     updateExplosionEffects(delta);
   }
 
-  return { explode, spawnThrown, syncPickups, throwGrenade, update };
+  return {
+    beginThrowCharge,
+    cancelThrowCharge,
+    explode,
+    getThrowChargeProgress,
+    isThrowCharging,
+    releaseThrowCharge,
+    spawnThrown,
+    syncPickups,
+    update
+  };
 }

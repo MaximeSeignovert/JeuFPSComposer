@@ -194,10 +194,33 @@ export function createViewModel() {
   knifeEdge.rotation.z = 0.08;
   knife.add(knifeEdge);
 
+  const grenade = new THREE.Group();
+  grenade.position.set(-0.02, -0.18, -0.3);
+
+  const grenadeBody = new THREE.Mesh(
+    new THREE.SphereGeometry(0.12, 14, 12),
+    new THREE.MeshStandardMaterial({ color: 0x556f49, roughness: 0.52, metalness: 0.28 })
+  );
+  grenade.add(grenadeBody);
+
+  const grenadeBand = new THREE.Mesh(new THREE.TorusGeometry(0.09, 0.012, 8, 18), metalDark);
+  grenadeBand.rotation.x = Math.PI / 2;
+  grenade.add(grenadeBand);
+
+  const grenadeCap = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.026, 0.075, 10), metalAccent);
+  grenadeCap.position.y = 0.13;
+  grenade.add(grenadeCap);
+
+  const grenadePin = new THREE.Mesh(new THREE.TorusGeometry(0.045, 0.008, 8, 16), metalAccent);
+  grenadePin.rotation.x = Math.PI / 2;
+  grenadePin.position.set(0.055, 0.15, 0);
+  grenade.add(grenadePin);
+
   group.add(ak47);
   group.add(shotgun);
   group.add(sniper);
   group.add(knife);
+  group.add(grenade);
 
   const muzzleAk = new THREE.Object3D();
   muzzleAk.position.set(-0.02, -0.16, -1.05);
@@ -215,8 +238,18 @@ export function createViewModel() {
   muzzleKnife.position.set(-0.015, -0.19, -0.64);
   knife.add(muzzleKnife);
 
-  group.userData.weaponModels = { ak47, shotgun, sniper, knife };
-  group.userData.muzzles = { ak47: muzzleAk, shotgun: muzzleShotgun, sniper: muzzleSniper, knife: muzzleKnife };
+  const muzzleGrenade = new THREE.Object3D();
+  muzzleGrenade.position.set(0, 0, -0.14);
+  grenade.add(muzzleGrenade);
+
+  group.userData.weaponModels = { ak47, shotgun, sniper, knife, grenade };
+  group.userData.muzzles = {
+    ak47: muzzleAk,
+    shotgun: muzzleShotgun,
+    sniper: muzzleSniper,
+    knife: muzzleKnife,
+    grenade: muzzleGrenade
+  };
   group.userData.armGroup = armGroup;
   group.userData.activeMuzzle = muzzleAk;
   group.userData.activeWeapon = "ak47";

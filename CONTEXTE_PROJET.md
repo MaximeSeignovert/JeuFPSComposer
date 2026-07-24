@@ -12,7 +12,7 @@ Fonctionnalites principales actuelles :
 - rendu 3D avec Three.js ;
 - serveur Express + Colyseus pour synchroniser les joueurs ;
 - physique locale avec Rapier 3D ;
-- armes : `AK47`, `Fusil a pompe`, `Sniper`, `Couteau` ;
+- trois classes principales : `AK47`, `Fusil a pompe`, `Sniper`, chacune avec un slot `Couteau` ;
 - tirs, degats, morts, respawn, kill feed ;
 - grenades avec pickups, lancer, rebonds, explosion ;
 - HUD vie/munitions/grenade ;
@@ -85,7 +85,7 @@ Flux simplifie :
 
 - `public/js/game/context.js` : fabrique le contexte partage entre controllers.
 - `public/js/game/player-controller.js` : mouvement, saut, jump pads, spawn safe, envoi des positions.
-- `public/js/game/weapons-controller.js` : selection d'arme, munitions, reload, tir, recul, visee, melee.
+- `public/js/game/weapons-controller.js` : classes et slots d'armes, munitions, reload, tir, recul, visee, melee.
 - `public/js/game/grenades-controller.js` : pickups, lancer, simulation/effets grenade.
 - `public/js/game/remote-players.js` : representation et interpolation des autres joueurs.
 
@@ -180,6 +180,10 @@ Les stats d'armes sont dans `public/js/config.js` :
 - `shotgun` : 12 pellets, chargeur 5, courte portee.
 - `sniper` : degats 100, chargeur 1, zoom FOV 28.
 - `knife` : melee, degats 100, vitesse de deplacement augmentee.
+
+Le client conserve une liste `weaponSlots` circulaire. Le slot 1 contient l'arme principale de la classe choisie et le slot 2 le couteau. Le ramassage d'une grenade ajoute temporairement un troisieme slot, retire apres le lancer ou au respawn. La molette parcourt ces slots (bas = suivant, haut = precedent), tandis qu'un bouton dedie assure le meme changement sur mobile. `G` et le bouton grenade equipent directement ce slot. Une pression maintenue sur le tir charge la puissance du lancer, puis le relachement lance la grenade. Le serveur borne et rediffuse la vitesse demandee par le client.
+
+Le HUD de combat en bas a droite rend dynamiquement `weaponSlots` sous forme de cartes numerotees, avec l'arme active mise en evidence. Le slot grenade apparait et disparait avec l'inventaire.
 
 La map est declaree dans `public/js/world/map-layout.js` :
 

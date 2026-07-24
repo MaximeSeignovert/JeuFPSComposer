@@ -74,12 +74,18 @@
           <div id="hudHealthFill" class="hud-health-fill h-full w-full origin-bottom rounded-full"></div>
         </div>
         <div class="hud-right fixed right-4 top-4 z-20 flex items-center gap-3 pointer-events-none">
-          <div
-            id="hudGrenade"
-            class="hud-grenade hud-grenade--empty"
-            role="status"
-            aria-label="Grenade"
-          >
+          <div class="hud-weapon-slots__header" aria-hidden="true">
+            <span>Équipement</span>
+            <span>Molette</span>
+          </div>
+          <div id="hudWeaponSlots" class="hud-weapon-slots" role="list" aria-label="Slots d'armes disponibles"></div>
+          <div class="hud-resources">
+            <div
+              id="hudGrenade"
+              class="hud-grenade hud-grenade--empty hidden"
+              role="status"
+              aria-label="Grenade"
+            >
             <div class="hud-grenade__icon-wrap">
               <svg
                 class="hud-grenade__svg"
@@ -108,16 +114,19 @@
             </div>
             <div class="hud-grenade__meta">
               <span class="hud-grenade__title">Grenade</span>
-              <span class="hud-grenade__key hud-grenade__key--ready"><kbd id="hudGrenadeKey">G</kbd> lancer</span>
+              <span class="hud-grenade__key hud-grenade__key--ready"><kbd id="hudGrenadeKey">G</kbd> équiper</span>
               <span class="hud-grenade__key hud-grenade__key--empty">Sur la map</span>
+              <span id="hudGrenadeCharge" class="hud-grenade__charge hidden" aria-hidden="true">
+                <span id="hudGrenadeChargeFill" class="hud-grenade__charge-fill"></span>
+              </span>
             </div>
-          </div>
-          <div
-            id="hudAmmo"
-            class="hud-ammo"
-            role="status"
-            aria-label="Munitions"
-          >
+            </div>
+            <div
+              id="hudAmmo"
+              class="hud-ammo"
+              role="status"
+              aria-label="Munitions"
+            >
             <svg class="hud-ammo__icon" viewBox="0 0 50 32" aria-hidden="true">
               <g class="hud-ammo__round hud-ammo__round--large">
                 <path class="hud-ammo__tip" d="M4 10C4.2 5.8 5.4 1.8 7 0c1.6 1.8 2.8 5.8 3 10H4Z" />
@@ -147,6 +156,7 @@
             <span id="hudAmmoCount" class="hud-ammo__count">20</span>
             <span class="hud-ammo__key"><kbd id="hudReloadKey">R</kbd> recharger</span>
             <span id="hudReloadStatus" class="hud-ammo__status"></span>
+            </div>
           </div>
         </div>
         <section id="killFeed" class="kill-feed" aria-live="polite" aria-label="Eliminations"></section>
@@ -166,7 +176,7 @@
         <h3>Menu pause</h3>
         <p class="subtitle">Utilise la touche « Pause / menu » (réglable ci-dessous) pour ouvrir ou fermer ce menu.</p>
         <div class="field-row">
-          <span>Changer d'arme</span>
+          <span>Classe d'arme</span>
           <div id="weaponChoice" class="weapon-choice">
             <button type="button" data-weapon="shotgun" class="weapon-card">
               <span class="weapon-card__icon" aria-hidden="true">
@@ -225,23 +235,18 @@
                 <span class="weapon-card__hint">Tir automatique</span>
               </span>
             </button>
-            <button type="button" data-weapon="knife" class="weapon-card">
-              <span class="weapon-card__icon" aria-hidden="true">
-                <svg class="weapon-card__svg" viewBox="0 0 48 24" width="48" height="24">
-                  <path d="M 3,10 L 16,10 L 17,14 L 4,15 C 2.5,15 2,14 2,12.7 L 2,12 C 2,10.8 2.5,10 3,10 Z" class="hud-wp-stock" />
-                  <path d="M 5,12 L 8,12 L 8,13.2 L 5,13.4 Z" class="hud-wp-sight" />
-                  <path d="M 10,12 L 13,12 L 13,13.1 L 10,13.3 Z" class="hud-wp-sight" />
-                  <path d="M 16,8 L 18.5,8 L 18.5,16 L 16,16 Z" class="hud-wp-body" />
-                  <path d="M 18.5,9 L 34,9 L 45,12 L 34,15 L 18.5,15 Z" class="hud-wp-blade" />
-                  <path d="M 22,10.5 L 34,10.5 L 40,12 L 34,13.5 L 22,13.5 Z" class="hud-wp-sight" />
-                </svg>
-              </span>
-              <span class="weapon-card__text">
-                <span class="weapon-card__name">Couteau</span>
-                <span class="weapon-card__hint">One-shot au contact</span>
-              </span>
-            </button>
           </div>
+          <p class="subtitle weapon-slots-hint">Chaque classe inclut le couteau. Utilise la molette pour changer de slot.</p>
+          <template id="weaponIconKnife">
+            <svg class="weapon-card__svg" viewBox="0 0 48 24" width="48" height="24">
+              <path d="M 3,10 L 16,10 L 17,14 L 4,15 C 2.5,15 2,14 2,12.7 L 2,12 C 2,10.8 2.5,10 3,10 Z" class="hud-wp-stock" />
+              <path d="M 5,12 L 8,12 L 8,13.2 L 5,13.4 Z" class="hud-wp-sight" />
+              <path d="M 10,12 L 13,12 L 13,13.1 L 10,13.3 Z" class="hud-wp-sight" />
+              <path d="M 16,8 L 18.5,8 L 18.5,16 L 16,16 Z" class="hud-wp-body" />
+              <path d="M 18.5,9 L 34,9 L 45,12 L 34,15 L 18.5,15 Z" class="hud-wp-blade" />
+              <path d="M 22,10.5 L 34,10.5 L 40,12 L 34,13.5 L 22,13.5 Z" class="hud-wp-sight" />
+            </svg>
+          </template>
         </div>
         <div class="field-row sensitivity-control">
           <label for="cameraSensitivityInput">
@@ -321,6 +326,15 @@
           </button>
           <button id="touchReloadBtn" class="touch-action" type="button" aria-label="Recharger" title="Recharger">
             <i data-lucide="rotate-cw" aria-hidden="true"></i>
+          </button>
+          <button
+            id="touchWeaponSwitchBtn"
+            class="touch-action"
+            type="button"
+            aria-label="Changer d'arme"
+            title="Changer d'arme"
+          >
+            <i data-lucide="repeat-2" aria-hidden="true"></i>
           </button>
           <button id="touchFireBtn" class="touch-action touch-action--fire" type="button" aria-label="Tir" title="Tir">
             <i data-lucide="zap" aria-hidden="true"></i>

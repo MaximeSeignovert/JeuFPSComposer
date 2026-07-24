@@ -23,9 +23,12 @@ export function createHudController(ctx) {
     hudAmmo,
     hudAmmoCount,
     hudGrenade,
+    hudGrenadeCharge,
+    hudGrenadeChargeFill,
     hudHealth,
     hudHealthFill,
     hudReloadStatus,
+    hudWeaponSlots,
     killFeed,
     menu,
     pauseMenuOverlay,
@@ -36,9 +39,11 @@ export function createHudController(ctx) {
     touchAimBtn,
     touchGrenadeBtn,
     touchReloadBtn,
+    touchWeaponSwitchBtn,
     weaponChoice
   } = ctx.dom;
   let renderedDeathWeapon = null;
+  let renderedWeaponSlots = "";
 
   function getDeathWeaponLabel(weapon) {
     return WEAPON_STATS[weapon]?.label || DEATH_WEAPON_LABELS[weapon] || "Inconnue";
@@ -53,7 +58,8 @@ export function createHudController(ctx) {
     const sourceSvg =
       weaponKey === "grenade"
         ? document.querySelector("#hudGrenade svg")
-        : weaponChoice?.querySelector(`button[data-weapon="${weaponKey}"] svg`);
+        : weaponChoice?.querySelector(`button[data-weapon="${weaponKey}"] svg`) ||
+          document.getElementById(`weaponIcon${weaponKey[0].toUpperCase()}${weaponKey.slice(1)}`)?.content.querySelector("svg");
     const icon = sourceSvg?.cloneNode(true);
     if (!icon) return null;
     icon.removeAttribute("width");
@@ -85,14 +91,20 @@ export function createHudController(ctx) {
 
   function updateAmmo() {
     if (!hudAmmo) return;
+    updateWeaponSwitch();
     const weapons = ctx.controllers.weapons;
     const weapon = state.weapon;
     const stats = weapons.getWeaponStats(weapon);
-    const usesMagazine = !stats.melee;
+    const usesMagazine = !stats.melee && !stats.throwable;
     hudAmmo.classList.toggle("hud-ammo--hidden", !usesMagazine);
     if (!usesMagazine) {
-      hudAmmo.setAttribute("aria-label", "Arme de melee");
-      if (touchReloadBtn) touchReloadBtn.disabled = true;
+      hudAmmo.setAttribute("aria-label", stats.throwable ? "Objet à lancer" : "Arme de melee");
+      if (hudReloadStatus) hudReloadStatus.textContent = "";
+      hudAmmo.classList.remove("hud-ammo--empty", "hud-ammo--reloading");
+      if (touchReloadBtn) {
+        touchReloadBtn.disabled = true;
+        touchReloadBtn.classList.remove("is-active");
+      }
       return;
     }
 
@@ -117,13 +129,41 @@ export function createHudController(ctx) {
   function updateGrenade() {
     if (!hudGrenade) return;
     const has = state.grenadesHeld >= 1;
+    const equipped = has && state.weapon === "grenade";
     hudGrenade.classList.toggle("hud-grenade--ready", has);
     hudGrenade.classList.toggle("hud-grenade--empty", !has);
+    hudGrenade.classList.toggle("hud-grenade--equipped", equipped);
     const gLabel = formatKeyLabel(keyBindings.grenade);
-    hudGrenade.setAttribute("aria-label", has ? `Grenade prête, touche ${gLabel} pour lancer` : "Pas de grenade");
+    hudGrenade.setAttribute(
+      "aria-label",
+      has
+        ? equipped
+          ? "Grenade équipée, maintiens le clic pour charger le lancer"
+          : `Grenade prête, touche ${gLabel} pour l'équiper`
+        : "Pas de grenade"
+    );
     if (touchGrenadeBtn) {
       touchGrenadeBtn.disabled = !has;
-      touchGrenadeBtn.classList.toggle("is-active", has);
+      touchGrenadeBtn.classList.toggle("is-active", equipped);
+    }
+    updateGrenadeCharge();
+  }
+
+  function updateGrenadeCharge() {
+    if (!hudGrenade || !hudGrenadeCharge || !hudGrenadeChargeFill) return;
+    const charging = Boolean(ctx.controllers.grenades?.isThrowCharging());
+    const progress = charging ? ctx.controllers.grenades.getThrowChargeProgress() : 0;
+    const grenadeSlot = hudWeaponSlots?.querySelector(".hud-weapon-slot--grenade");
+    hudGrenade.classList.toggle("hud-grenade--charging", charging);
+    hudGrenadeCharge.classList.toggle("hidden", !charging);
+    hudGrenadeChargeFill.style.transform = `scaleX(${progress.toFixed(3)})`;
+    grenadeSlot?.classList.toggle("is-charging", charging);
+    grenadeSlot?.style.setProperty("--grenade-charge-progress", progress.toFixed(3));
+    if (charging) {
+      hudGrenade.setAttribute(
+        "aria-label",
+        `Puissance du lancer ${Math.round(progress * 100)} %, relâche le clic pour lancer`
+      );
     }
   }
 
@@ -138,6 +178,54 @@ export function createHudController(ctx) {
     sniperScope.classList.toggle("hidden", !shouldZoom);
     const showCrosshair = state.joined && state.isAlive && !state.pauseOpen && !shouldZoom;
     crosshair.classList.toggle("hidden", !showCrosshair);
+  }
+
+  function updateWeaponSwitch() {
+    renderWeaponSlots();
+    if (!touchWeaponSwitchBtn) return;
+    const slots = state.weaponSlots;
+    const currentIndex = Number(state.activeWeaponSlot) || 0;
+    const nextWeapon = slots[(currentIndex + 1) % slots.length];
+    const currentLabel = WEAPON_STATS[state.weapon]?.label || state.weapon;
+    const nextLabel = WEAPON_STATS[nextWeapon]?.label || nextWeapon;
+    const label = `Changer d'arme : ${currentLabel}, suivante ${nextLabel}`;
+    touchWeaponSwitchBtn.setAttribute("aria-label", label);
+    touchWeaponSwitchBtn.setAttribute("title", label);
+    touchWeaponSwitchBtn.classList.toggle("is-active", currentIndex !== 0);
+  }
+
+  function renderWeaponSlots() {
+    if (!hudWeaponSlots) return;
+    const signature = `${state.weaponSlots.join("|")}:${state.activeWeaponSlot}`;
+    if (signature === renderedWeaponSlots) return;
+    renderedWeaponSlots = signature;
+    const fragment = document.createDocumentFragment();
+    state.weaponSlots.forEach((weapon, index) => {
+      const active = index === state.activeWeaponSlot;
+      const stats = WEAPON_STATS[weapon];
+      const slot = document.createElement("div");
+      slot.className = `hud-weapon-slot hud-weapon-slot--${weapon}${active ? " is-active" : ""}`;
+      slot.setAttribute("role", "listitem");
+      slot.setAttribute("aria-label", `Slot ${index + 1}, ${stats?.label || weapon}${active ? ", équipé" : ""}`);
+      if (active) slot.setAttribute("aria-current", "true");
+
+      const number = document.createElement("span");
+      number.className = "hud-weapon-slot__number";
+      number.textContent = String(index + 1).padStart(2, "0");
+
+      const iconWrap = document.createElement("span");
+      iconWrap.className = "hud-weapon-slot__icon";
+      const icon = createWeaponIcon(weapon, "hud-weapon-slot__svg");
+      if (icon) iconWrap.append(icon);
+
+      const label = document.createElement("span");
+      label.className = "hud-weapon-slot__label";
+      label.textContent = stats?.label || weapon;
+
+      slot.append(number, iconWrap, label);
+      fragment.append(slot);
+    });
+    hudWeaponSlots.replaceChildren(fragment);
   }
 
   function updateShotCooldown() {
@@ -187,6 +275,7 @@ export function createHudController(ctx) {
     if (!state.isAlive) {
       state.isFiring = false;
       state.isAiming = false;
+      ctx.controllers.weapons?.cancelPrimaryFire();
       ctx.controllers.weapons?.cancelReload();
       resetTouchInput();
       sniperScope.classList.add("hidden");
@@ -270,7 +359,7 @@ export function createHudController(ctx) {
     sniperScope.classList.add("hidden");
     if (open) {
       state.keys.clear();
-      state.isFiring = false;
+      ctx.controllers.weapons?.cancelPrimaryFire();
       state.isAiming = false;
       resetTouchInput();
       if (document.pointerLockElement === canvas) document.exitPointerLock();
@@ -292,8 +381,9 @@ export function createHudController(ctx) {
 
   function syncWeaponChoice() {
     weaponChoice.querySelectorAll("button").forEach((button) => {
-      button.classList.toggle("active", button.getAttribute("data-weapon") === state.weapon);
+      button.classList.toggle("active", button.getAttribute("data-weapon") === state.weaponSlots[0]);
     });
+    updateWeaponSwitch();
   }
 
   function renderScoreboard(players) {
@@ -336,6 +426,7 @@ export function createHudController(ctx) {
 
   function updateFrame() {
     updateZoom();
+    updateGrenadeCharge();
     updateShotCooldown();
     updateRespawnNotice();
     updateDeathScreen();
