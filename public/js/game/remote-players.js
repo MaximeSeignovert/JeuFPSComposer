@@ -4,6 +4,7 @@ import {
   applyRemoteTeamStyle,
   colorFromPlayerId,
   createPlayerMesh,
+  resolvePlayerAppearanceAssets,
   setRemoteAliveVisual,
   updateNameTagSprite
 } from "../players/appearance.js";
@@ -13,8 +14,10 @@ function lerpAngle(from, to, t) {
   return from + delta * t;
 }
 
-export function createRemotePlayersController(ctx) {
+export async function createRemotePlayersController(ctx) {
   const { scene, state } = ctx;
+  await resolvePlayerAppearanceAssets();
+
   const localBody = createPlayerMesh(true);
   localBody.visible = false;
   scene.add(localBody);
@@ -68,6 +71,7 @@ export function createRemotePlayersController(ctx) {
     const remoteIds = new Set(players.filter((p) => p.id !== state.playerId).map((p) => p.id));
     ctx.remoteMeshes.forEach((remotePlayer, id) => {
       if (remoteIds.has(id)) return;
+      remotePlayer.root.userData.mixer?.stopAllAction();
       scene.remove(remotePlayer.root);
       ctx.remoteMeshes.delete(id);
     });
@@ -100,27 +104,29 @@ export function createRemotePlayersController(ctx) {
     ctx.remoteMeshes.forEach((remotePlayer) => {
       if (!remotePlayer?.targetPosition) return;
 
-      if (remotePlayer.root.userData.parts && time !== undefined) {
+      if (remotePlayer.root.userData.mixer) {
+        remotePlayer.root.userData.mixer.update(delta);
+      } else if (remotePlayer.root.userData.parts && time !== undefined) {
         const parts = remotePlayer.root.userData.parts;
+        const baseTorsoY = Number(parts.baseTorsoY) || 1.43;
         const dist = remotePlayer.root.position.distanceTo(remotePlayer.targetPosition);
         const speed = Math.min(dist / delta, 5);
 
         if (speed > 0.5) {
           const walkCycle = time * 12;
-          parts.leftLeg.rotation.x = Math.sin(walkCycle) * 0.6;
-          parts.rightLeg.rotation.x = Math.sin(walkCycle + Math.PI) * 0.6;
-          parts.leftArm.rotation.x = Math.sin(walkCycle + Math.PI) * 0.5;
-          parts.rightArm.rotation.x = Math.sin(walkCycle) * 0.1 + 0.4;
-          parts.torso.rotation.y = Math.sin(walkCycle) * 0.1;
-          parts.torso.position.y = 1.44 + Math.abs(Math.sin(walkCycle * 2)) * 0.05;
+          parts.leftLeg.rotation.x = Math.sin(walkCycle) * 0.5;
+          parts.rightLeg.rotation.x = Math.sin(walkCycle + Math.PI) * 0.5;
+          parts.leftArm.rotation.x = Math.sin(walkCycle + Math.PI) * 0.1;
+          parts.rightArm.rotation.x = Math.sin(walkCycle) * 0.08;
+          parts.torso.rotation.y = Math.sin(walkCycle) * 0.045;
+          parts.torso.position.y = baseTorsoY;
         } else {
-          const idleCycle = time * 2;
           parts.leftLeg.rotation.x = THREE.MathUtils.lerp(parts.leftLeg.rotation.x, 0, 0.1);
           parts.rightLeg.rotation.x = THREE.MathUtils.lerp(parts.rightLeg.rotation.x, 0, 0.1);
           parts.leftArm.rotation.x = THREE.MathUtils.lerp(parts.leftArm.rotation.x, 0, 0.1);
-          parts.rightArm.rotation.x = THREE.MathUtils.lerp(parts.rightArm.rotation.x, 0.4, 0.1);
+          parts.rightArm.rotation.x = THREE.MathUtils.lerp(parts.rightArm.rotation.x, 0, 0.1);
           parts.torso.rotation.y = THREE.MathUtils.lerp(parts.torso.rotation.y, 0, 0.1);
-          parts.torso.position.y = 1.44 + Math.sin(idleCycle) * 0.02;
+          parts.torso.position.y = baseTorsoY;
         }
       }
 

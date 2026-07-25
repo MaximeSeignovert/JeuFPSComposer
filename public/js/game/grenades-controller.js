@@ -1,34 +1,24 @@
 import * as THREE from "https://unpkg.com/three@0.164.1/build/three.module.js";
 import { GRENADE_CONFIG } from "../config.js";
+import { createWorldGrenadeModel } from "../weapons.js";
 
-export function createGrenadesController(ctx) {
+export async function createGrenadesController(ctx) {
   const { camera, scene, state } = ctx;
+  const thrownGrenadeTemplate = await createWorldGrenadeModel(GRENADE_CONFIG.radius * 2);
   let throwChargeStartedAt = 0;
 
   function createGrenadePickupMesh() {
-    const group = new THREE.Group();
-    const body = new THREE.Mesh(
-      new THREE.SphereGeometry(0.18, 14, 12),
-      new THREE.MeshStandardMaterial({ color: 0x4d7f57, roughness: 0.55, metalness: 0.32 })
-    );
-    group.add(body);
-    const cap = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.035, 0.035, 0.1, 10),
-      new THREE.MeshStandardMaterial({ color: 0x2f3338, roughness: 0.45, metalness: 0.75 })
-    );
-    cap.position.y = 0.18;
-    group.add(cap);
-    const pin = new THREE.Mesh(
-      new THREE.TorusGeometry(0.06, 0.012, 8, 18),
-      new THREE.MeshStandardMaterial({ color: 0xe8df9f, roughness: 0.3, metalness: 0.82 })
-    );
-    pin.rotation.x = Math.PI / 2;
-    pin.position.set(0.07, 0.18, 0);
-    group.add(pin);
+    const group = thrownGrenadeTemplate.clone(true);
     const glow = new THREE.Mesh(
       new THREE.SphereGeometry(0.28, 14, 12),
-      new THREE.MeshBasicMaterial({ color: 0x9dff9e, transparent: true, opacity: 0.2 })
+      new THREE.MeshBasicMaterial({
+        color: 0x9dff9e,
+        transparent: true,
+        opacity: 0.2,
+        depthWrite: false
+      })
     );
+    glow.userData.disposeWithPickup = true;
     group.add(glow);
     group.userData.baseY = 0.42;
     group.userData.spinOffset = Math.random() * Math.PI * 2;
@@ -56,8 +46,13 @@ export function createGrenadesController(ctx) {
       if (nextIds.has(id)) return;
       scene.remove(mesh);
       mesh.traverse((child) => {
-        if (child.geometry) child.geometry.dispose();
-        if (child.material) child.material.dispose();
+        if (!child.userData.disposeWithPickup) return;
+        child.geometry?.dispose();
+        if (Array.isArray(child.material)) {
+          child.material.forEach((material) => material.dispose());
+        } else {
+          child.material?.dispose();
+        }
       });
       ctx.grenadePickupMeshes.delete(id);
       ctx.grenadePickups.delete(id);
@@ -74,19 +69,7 @@ export function createGrenadesController(ctx) {
   }
 
   function createThrownGrenadeMesh() {
-    const group = new THREE.Group();
-    const body = new THREE.Mesh(
-      new THREE.SphereGeometry(GRENADE_CONFIG.radius, 12, 10),
-      new THREE.MeshStandardMaterial({ color: 0x556f49, roughness: 0.52, metalness: 0.28 })
-    );
-    group.add(body);
-    const band = new THREE.Mesh(
-      new THREE.TorusGeometry(0.11, 0.016, 8, 18),
-      new THREE.MeshStandardMaterial({ color: 0x25282d, roughness: 0.38, metalness: 0.72 })
-    );
-    band.rotation.x = Math.PI / 2;
-    group.add(band);
-    return group;
+    return thrownGrenadeTemplate.clone(true);
   }
 
   function createGrenadeTrail() {
@@ -144,10 +127,6 @@ export function createGrenadesController(ctx) {
     ctx.physics?.disposeGrenade(grenade.id);
     scene.remove(grenade.mesh);
     scene.remove(grenade.trail);
-    grenade.mesh.traverse((child) => {
-      if (child.geometry) child.geometry.dispose();
-      if (child.material) child.material.dispose();
-    });
     grenade.trail.geometry.dispose();
     grenade.trail.material.dispose();
   }

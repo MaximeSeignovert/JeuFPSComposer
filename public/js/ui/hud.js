@@ -172,11 +172,17 @@ export function createHudController(ctx) {
     const stats = weapons.getWeaponStats();
     const shouldZoom =
       state.joined && state.isAlive && state.isAiming && state.weapon === "sniper" && !state.pauseOpen;
+    const shouldUseIronSights =
+      state.joined &&
+      state.isAlive &&
+      state.isAiming &&
+      (state.weapon === "ak47" || state.weapon === "shotgun") &&
+      !state.pauseOpen;
     const targetFov = shouldZoom ? stats.zoomFov : BASE_FOV;
     camera.fov = THREE.MathUtils.lerp(camera.fov, targetFov, 0.2);
     camera.updateProjectionMatrix();
     sniperScope.classList.toggle("hidden", !shouldZoom);
-    const showCrosshair = state.joined && state.isAlive && !state.pauseOpen && !shouldZoom;
+    const showCrosshair = state.joined && state.isAlive && !state.pauseOpen && !shouldZoom && !shouldUseIronSights;
     crosshair.classList.toggle("hidden", !showCrosshair);
   }
 

@@ -22,7 +22,7 @@ import { createSceneSetup } from "./js/world/scene.js";
 import { state } from "./js/state.js";
 
 const sceneSetup = createSceneSetup(dom.canvas);
-const viewModel = createViewModel();
+const viewModel = await createViewModel();
 sceneSetup.camera.add(viewModel);
 
 const ctx = createGameContext({
@@ -42,11 +42,11 @@ function resizeRendererToViewport() {
 ctx.controllers.world = createWorldRenderer(ctx);
 ctx.controllers.effects = createEffectsController(ctx);
 ctx.controllers.sound = createSoundController(ctx);
-ctx.controllers.remotePlayers = createRemotePlayersController(ctx);
+ctx.controllers.remotePlayers = await createRemotePlayersController(ctx);
 ctx.controllers.weapons = createWeaponsController(ctx);
 ctx.controllers.hud = createHudController(ctx);
 ctx.controllers.player = createPlayerController(ctx);
-ctx.controllers.grenades = createGrenadesController(ctx);
+ctx.controllers.grenades = await createGrenadesController(ctx);
 ctx.controllers.socket = createSocketClient(ctx);
 
 ctx.controllers.world.build();
