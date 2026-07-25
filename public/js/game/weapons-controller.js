@@ -1,5 +1,6 @@
 import * as THREE from "https://unpkg.com/three@0.164.1/build/three.module.js";
 import {
+  PRIMARY_WEAPONS,
   VIEW_RECOIL_BOB_SUPPRESS_K,
   VIEW_RECOIL_DECAY,
   VIEW_RECOIL_NORM_CAP,
@@ -9,10 +10,24 @@ import { keyBindings } from "../input/keybinding-ui.js";
 import { hasGameLookInput } from "../input/touch-controls.js";
 
 const KNIFE_ATTACK_DURATION = 0.34;
+const ADS_VIEW_POSES = {
+  ak47: {
+    // Place la pointe du guidon, et non l'axe du canon, sur le rayon central de la caméra.
+    position: { x: -0.065, y: -0.095, z: -0.35 },
+    rotation: { x: 0.085, y: 0 },
+    modelRotation: { x: -0.035, y: 0 }
+  },
+  shotgun: {
+    // Superpose l'œilleton arrière et le guidon avant sur le rayon central.
+    position: { x: -0.082, y: -0.013, z: -0.35 },
+    rotation: { x: 0.024, y: 0 },
+    modelRotation: { x: 0, y: 0 }
+  }
+};
 
 export function createWeaponsController(ctx) {
   const { camera, state, viewModel } = ctx;
-  const { touchAimBtn, weaponChoice, touchInput } = ctx.dom;
+  const { touchAimBtn, touchInput } = ctx.dom;
   let aimViewBlend = 0;
   let knifeAttackTime = 0;
 
@@ -21,7 +36,8 @@ export function createWeaponsController(ctx) {
   }
 
   function hasMagazine(weapon = state.weapon) {
-    return !getWeaponStats(weapon).melee;
+    const stats = getWeaponStats(weapon);
+    return !stats.melee && !stats.throwable;
   }
 
   function getMagazineSize(weapon = state.weapon) {
@@ -82,6 +98,7 @@ export function createWeaponsController(ctx) {
     state.reloadUntil = performance.now() + getReloadDurationMs(weapon);
     state.isFiring = false;
     if (manual) state.primaryFireHeld = false;
+    viewModel.userData.playAnimation?.(weapon, "reload");
     ctx.controllers.sound?.playReload(weapon);
     ctx.controllers.hud?.updateAmmo();
     return true;
@@ -116,23 +133,103 @@ export function createWeaponsController(ctx) {
     viewModel.userData.activeWeapon = key;
   }
 
-  function selectWeapon(weapon) {
-    state.weapon = weapon;
+  function normalizeWeaponSlotIndex(index) {
+    const slotCount = state.weaponSlots.length;
+    if (slotCount === 0) return -1;
+    return ((Math.trunc(index) % slotCount) + slotCount) % slotCount;
+  }
+
+  function equipWeaponSlot(index) {
+    const slotIndex = normalizeWeaponSlotIndex(index);
+    if (slotIndex < 0) return false;
+    const weapon = state.weaponSlots[slotIndex];
+    if (!WEAPON_STATS[weapon]) return false;
+
+    const weaponChanged = state.weapon !== weapon;
+    const slotChanged = state.activeWeaponSlot !== slotIndex;
+    if (!weaponChanged && !slotChanged) return false;
+
+    cancelPrimaryFire();
     state.isAiming = false;
+    knifeAttackTime = 0;
+    state.weapon = weapon;
+    state.activeWeaponSlot = slotIndex;
     cancelReload();
-    clearShotCooldown();
     ensureWeaponAmmo(weapon);
     ctx.controllers.hud?.updateAmmo();
     touchAimBtn?.classList.remove("is-active");
     setActiveWeaponModel(weapon);
-    weaponChoice.querySelectorAll("button").forEach((b) => b.classList.remove("active"));
-    weaponChoice.querySelector(`button[data-weapon="${weapon}"]`)?.classList.add("active");
-    ctx.controllers.socket?.sendWeaponSelect(weapon);
+    ctx.controllers.hud?.syncWeaponChoice();
+    if (weaponChanged && weapon !== "grenade") ctx.controllers.socket?.sendWeaponSelect(weapon);
+    return true;
+  }
+
+  function selectPrimaryWeapon(weapon) {
+    if (!PRIMARY_WEAPONS.includes(weapon)) return false;
+    state.weaponSlots[0] = weapon;
+    if (state.activeWeaponSlot === 0 && state.weapon === weapon) {
+      ctx.controllers.hud?.syncWeaponChoice();
+      return false;
+    }
+    return equipWeaponSlot(0);
+  }
+
+  function cycleWeaponSlot(direction = 1) {
+    if (!state.joined || state.pauseOpen || !state.isAlive || state.weaponSlots.length < 2) return false;
+    const step = Number(direction) < 0 ? -1 : 1;
+    return equipWeaponSlot(state.activeWeaponSlot + step);
+  }
+
+  function equipPrimaryWeapon() {
+    return equipWeaponSlot(0);
+  }
+
+  function equipGrenade() {
+    const grenadeSlot = state.weaponSlots.indexOf("grenade");
+    if (grenadeSlot < 0 || state.grenadesHeld < 1) return false;
+    return equipWeaponSlot(grenadeSlot);
+  }
+
+  function setGrenadeSlotAvailable(available) {
+    const grenadeSlot = state.weaponSlots.indexOf("grenade");
+    if (available) {
+      if (grenadeSlot < 0) state.weaponSlots.push("grenade");
+      ctx.controllers.hud?.syncWeaponChoice();
+      ctx.controllers.hud?.updateGrenade();
+      return;
+    }
+    if (grenadeSlot < 0) return;
+
+    const wasActive = state.activeWeaponSlot === grenadeSlot || state.weapon === "grenade";
+    state.weaponSlots.splice(grenadeSlot, 1);
+    if (wasActive) {
+      state.activeWeaponSlot = Math.min(grenadeSlot, state.weaponSlots.length - 1);
+      equipWeaponSlot(0);
+    } else if (state.activeWeaponSlot > grenadeSlot) {
+      state.activeWeaponSlot -= 1;
+    }
+    ctx.controllers.hud?.syncWeaponChoice();
+    ctx.controllers.hud?.updateGrenade();
+  }
+
+  function initializeWeaponSlots(primaryWeapon = "ak47") {
+    const primary = PRIMARY_WEAPONS.includes(primaryWeapon) ? primaryWeapon : "ak47";
+    state.weaponSlots = [primary, "knife"];
+    state.activeWeaponSlot = 0;
+    state.weapon = primary;
+    setActiveWeaponModel(primary);
+    ctx.controllers.hud?.syncWeaponChoice();
   }
 
   function beginPrimaryFire() {
     if (!state.joined || state.pauseOpen || !state.isAlive || !hasGameLookInput()) return false;
     const stats = getWeaponStats();
+    if (stats.throwable) {
+      if (!ctx.controllers.grenades?.beginThrowCharge()) return false;
+      state.primaryFireHeld = true;
+      state.isFiring = true;
+      return true;
+    }
     state.primaryFireHeld = true;
     state.isFiring = true;
     shoot();
@@ -141,8 +238,17 @@ export function createWeaponsController(ctx) {
   }
 
   function endPrimaryFire() {
+    const shouldReleaseGrenade =
+      state.weapon === "grenade" && state.primaryFireHeld && ctx.controllers.grenades?.isThrowCharging();
     state.primaryFireHeld = false;
     state.isFiring = false;
+    if (shouldReleaseGrenade) ctx.controllers.grenades?.releaseThrowCharge();
+  }
+
+  function cancelPrimaryFire() {
+    state.primaryFireHeld = false;
+    state.isFiring = false;
+    ctx.controllers.grenades?.cancelThrowCharge();
   }
 
   function endPrimaryFireFromMouseEvent(event) {
@@ -181,6 +287,7 @@ export function createWeaponsController(ctx) {
     const msBetweenShots = 1000 / stats.fireRate;
     if (now - state.lastShotAt < msBetweenShots) return;
     state.lastShotAt = now;
+    viewModel.userData.playAnimation?.(state.weapon, "shoot");
     if (state.weapon === "shotgun" || state.weapon === "sniper") {
       state.shotCooldownWeapon = state.weapon;
       state.shotCooldownUntil = now + msBetweenShots;
@@ -200,6 +307,7 @@ export function createWeaponsController(ctx) {
     if (stats.melee) {
       const direction = { x: baseDirection.x, y: baseDirection.y, z: baseDirection.z };
       knifeAttackTime = KNIFE_ATTACK_DURATION;
+      ctx.controllers.sound?.playShot(state.weapon);
       ctx.controllers.effects.traceMeleeSweep(aimOrigin, direction, stats.range, true, stats.damage, {
         halfAngle: stats.swingHalfAngle,
         targetRadius: stats.swingTargetRadius
@@ -236,7 +344,7 @@ export function createWeaponsController(ctx) {
       ctx.controllers.effects.spawnBulletVisual(muzzleOrigin, direction, true, stats.bulletSpeed, impact?.distance || stats.range);
     }
     ctx.controllers.effects.spawnMuzzleFlash(muzzleOrigin);
-    ctx.controllers.socket?.sendShoot({ origin: aimOrigin, weapon: state.weapon, shots });
+    ctx.controllers.socket?.sendShoot({ origin: muzzleOrigin, weapon: state.weapon, shots });
     if (ensureWeaponAmmo() <= 0) startReload(false);
   }
 
@@ -285,9 +393,32 @@ export function createWeaponsController(ctx) {
     const c8 = Math.cos(t * 8 * sprintFactor);
     const s67 = Math.sin(t * 6.7 * sprintFactor);
 
-    if (viewModel.userData.armGroup) {
-      viewModel.userData.armGroup.position.y = -aimViewBlend * 0.5;
-      viewModel.userData.armGroup.visible = aimViewBlend < 0.8;
+    const activeArmMesh = viewModel.userData.armMeshes?.[state.weapon];
+    if (activeArmMesh) {
+      activeArmMesh.visible = aimViewBlend < 0.8;
+    }
+    const activeWeaponModel = viewModel.userData.weaponModels?.[state.weapon];
+    const activeAimPivot = activeWeaponModel?.userData.aimPivot;
+    const activeModelRotation = ADS_VIEW_POSES[state.weapon]?.modelRotation;
+    if (activeAimPivot) {
+      activeAimPivot.rotation.x = (activeModelRotation?.x || 0) * aimViewBlend;
+      activeAimPivot.rotation.y = (activeModelRotation?.y || 0) * aimViewBlend;
+    }
+
+    if (state.weapon === "grenade") {
+      const charge = ctx.controllers.grenades?.getThrowChargeProgress() || 0;
+      const airY = state.onGround ? 0 : -0.03;
+      viewModel.position.set(
+        0.34 + s95 * bobX * bobIntensity + charge * 0.08,
+        -0.24 + c75 * bobY * bobIntensity + airY + charge * 0.07,
+        -0.48 + s15 * 0.004 * bobIntensity + charge * 0.04
+      );
+      viewModel.rotation.set(
+        -0.08 + c8 * bobRotX * bobIntensity - charge * 0.18,
+        -0.12 + s67 * bobRotY * bobIntensity,
+        -0.24 + s85 * bobRotZ * bobIntensity - charge * 0.16
+      );
+      return;
     }
 
     if (state.weapon === "knife") {
@@ -297,8 +428,8 @@ export function createWeaponsController(ctx) {
       const slashEase = 1 - Math.pow(1 - slashP, 3);
       const recoverEase = recoverP * recoverP * (3 - 2 * recoverP);
       const airY = state.onGround ? 0 : -0.03;
-      const start = { x: 0.48, y: -0.12, z: -0.49, rx: -0.24, ry: -0.25, rz: -0.72 };
-      const end = { x: 0.1, y: -0.42, z: -0.54, rx: 0.2, ry: 0.22, rz: 0.82 };
+      const start = { x: 0.43, y: -0.12, z: -0.49, rx: -0.18, ry: -0.22, rz: -0.46 };
+      const end = { x: 0.16, y: -0.34, z: -0.54, rx: 0.12, ry: 0.16, rz: 0.48 };
       const rest = {
         x: 0.34 + s95 * bobX * bobIntensity,
         y: -0.25 + c75 * bobY * bobIntensity + airY,
@@ -331,43 +462,41 @@ export function createWeaponsController(ctx) {
       return;
     }
 
-    const isAk = state.weapon === "ak47";
     const isShotgun = state.weapon === "shotgun";
+    const isSniper = state.weapon === "sniper";
     const reloadProgress = getReloadProgress();
-    const rotXTarget = isAk ? 0.085 : 0.024;
-    const yTarget = isAk ? 0.0 : 0.1;
-    // Compense le léger décalage à gauche du modèle du fusil à pompe en visée.
-    const xTarget = isShotgun ? 0.035 : 0.02;
+    const aimPose = ADS_VIEW_POSES[state.weapon] || ADS_VIEW_POSES.shotgun;
+    const restY = isSniper ? -0.22 : -0.31;
     const airY = state.onGround ? 0 : -0.03;
 
     viewModel.position.x = THREE.MathUtils.lerp(
       0.3 + s95 * bobX * bobIntensity,
-      xTarget + s95 * bobX * bobIntensity * 0.35,
+      aimPose.position.x,
       aimViewBlend
     );
     viewModel.position.y = THREE.MathUtils.lerp(
-      -0.31 + c75 * bobY * bobIntensity + airY + state.viewRecoilY,
-      yTarget + c75 * bobY * bobIntensity * 0.35 + airY + state.viewRecoilY,
+      restY + c75 * bobY * bobIntensity + airY + state.viewRecoilY,
+      aimPose.position.y + state.viewRecoilY,
       aimViewBlend
     );
     viewModel.position.z = THREE.MathUtils.lerp(
       -0.52 + s15 * 0.004 * bobIntensity + state.viewRecoilZ,
-      -0.35 + s15 * 0.004 * bobIntensity * 0.35 + state.viewRecoilZ,
+      aimPose.position.z + state.viewRecoilZ,
       aimViewBlend
     );
     viewModel.rotation.z = THREE.MathUtils.lerp(
       s85 * bobRotZ * bobIntensity + state.viewRecoilRotZ,
-      s85 * bobRotZ * bobIntensity * 0.35 + state.viewRecoilRotZ,
+      state.viewRecoilRotZ,
       aimViewBlend
     );
     viewModel.rotation.x = THREE.MathUtils.lerp(
       -0.02 + c8 * bobRotX * bobIntensity + state.viewRecoilRotX,
-      rotXTarget + c8 * bobRotX * bobIntensity * 0.35 + state.viewRecoilRotX,
+      aimPose.rotation.x + state.viewRecoilRotX,
       aimViewBlend
     );
     viewModel.rotation.y = THREE.MathUtils.lerp(
       -0.22 + s67 * bobRotY * bobIntensity,
-      s67 * bobRotY * bobIntensity * 0.35,
+      aimPose.rotation.y,
       aimViewBlend
     );
 
@@ -388,6 +517,7 @@ export function createWeaponsController(ctx) {
   }
 
   function update(delta) {
+    viewModel.userData.updateAnimations?.(delta);
     updateReloadState();
     if (state.primaryFireHeld && getWeaponStats().auto && !state.pauseOpen && state.isAlive) {
       state.isFiring = true;
@@ -399,17 +529,24 @@ export function createWeaponsController(ctx) {
   return {
     beginPrimaryFire,
     cancelReload,
+    cancelPrimaryFire,
     clearShotCooldown,
+    cycleWeaponSlot,
     endPrimaryFire,
     endPrimaryFireFromMouseEvent,
+    equipGrenade,
+    equipPrimaryWeapon,
+    equipWeaponSlot,
     ensureWeaponAmmo,
     getMagazineSize,
     getReloadProgress,
     getWeaponStats,
     isReloadingWeapon,
+    initializeWeaponSlots,
     refillAllMagazines,
     reloadWeapon,
-    selectWeapon,
+    selectPrimaryWeapon,
+    setGrenadeSlotAvailable,
     setActiveWeaponModel,
     shoot,
     update

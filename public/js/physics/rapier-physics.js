@@ -224,6 +224,7 @@ export async function initPhysics({ mapConfig, mapHalfSize, playerHeight, gravit
   controller.setMinSlopeSlideAngle(Math.PI / 3.1);
 
   const grenades = new Map();
+  const grenadeBodyPool = [];
   let accumulator = 0;
 
   function getPlayerCenter() {
@@ -267,7 +268,11 @@ export async function initPhysics({ mapConfig, mapHalfSize, playerHeight, gravit
       y: (Number(verticalVelocity) || 0) * dt,
       z: (Number(horizontalVelocity?.z) || 0) * dt
     };
-    controller.computeColliderMovement(playerCollider, desired);
+    controller.computeColliderMovement(
+      playerCollider,
+      desired,
+      RAPIER.QueryFilterFlags.ONLY_FIXED
+    );
     const movement = controller.computedMovement();
     const center = getPlayerCenter();
     playerCollider.setTranslation({
@@ -294,21 +299,41 @@ export async function initPhysics({ mapConfig, mapHalfSize, playerHeight, gravit
     const direction = vectorFrom(grenadeData.direction, { x: 0, y: 0.25, z: -1 });
     const len = Math.hypot(direction.x, direction.y, direction.z) || 1;
     const speed = Number(grenadeData.speed) || grenadeConfig.throwSpeed;
-    const body = world.createRigidBody(
-      RAPIER.RigidBodyDesc.dynamic()
-        .setTranslation(origin.x, origin.y, origin.z)
-        .setLinvel((direction.x / len) * speed, (direction.y / len) * speed, (direction.z / len) * speed)
-        .setCcdEnabled(true)
-        .setAngularDamping(0.08)
-        .setLinearDamping(0.02)
-    );
-    const collider = world.createCollider(
-      RAPIER.ColliderDesc.ball(grenadeConfig.radius)
-        .setRestitution(grenadeConfig.bounceDamping)
-        .setFriction(1 - grenadeConfig.friction),
-      body
-    );
-    const grenade = { id: grenadeData.id, body, collider };
+    const linearVelocity = {
+      x: (direction.x / len) * speed,
+      y: (direction.y / len) * speed,
+      z: (direction.z / len) * speed
+    };
+    const angularVelocity = {
+      x: (direction.z / len) * 12,
+      y: 4,
+      z: (-direction.x / len) * 12
+    };
+    let body = grenadeBodyPool.pop() || null;
+    if (body) {
+      body.setEnabled(true);
+      body.setTranslation(origin, true);
+      body.setRotation({ x: 0, y: 0, z: 0, w: 1 }, true);
+      body.setLinvel(linearVelocity, true);
+      body.setAngvel(angularVelocity, true);
+    } else {
+      body = world.createRigidBody(
+        RAPIER.RigidBodyDesc.dynamic()
+          .setTranslation(origin.x, origin.y, origin.z)
+          .setLinvel(linearVelocity.x, linearVelocity.y, linearVelocity.z)
+          .setAngvel(angularVelocity)
+          .setCcdEnabled(true)
+          .setAngularDamping(0.08)
+          .setLinearDamping(0.02)
+      );
+      world.createCollider(
+        RAPIER.ColliderDesc.ball(grenadeConfig.radius)
+          .setRestitution(grenadeConfig.bounceDamping)
+          .setFriction(1 - grenadeConfig.friction),
+        body
+      );
+    }
+    const grenade = { id: grenadeData.id, body };
     grenades.set(grenadeData.id, grenade);
     return grenade;
   }
@@ -316,8 +341,11 @@ export async function initPhysics({ mapConfig, mapHalfSize, playerHeight, gravit
   function disposeGrenade(id) {
     const grenade = grenades.get(id);
     if (!grenade) return;
-    world.removeRigidBody(grenade.body);
     grenades.delete(id);
+    grenade.body.setLinvel({ x: 0, y: 0, z: 0 }, false);
+    grenade.body.setAngvel({ x: 0, y: 0, z: 0 }, false);
+    grenade.body.setEnabled(false);
+    grenadeBodyPool.push(grenade.body);
   }
 
   function getGrenadeTransform(id) {

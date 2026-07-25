@@ -1,117 +1,74 @@
 import * as THREE from "https://unpkg.com/three@0.164.1/build/three.module.js";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { clone as cloneSkeleton } from "three/addons/utils/SkeletonUtils.js";
 
-const localMaterial = new THREE.MeshStandardMaterial({ color: 0x45e0a8 });
+const localMaterial = new THREE.MeshStandardMaterial({ color: 0x45e0a8, roughness: 0.72 });
+const soldierUrl = new URL("../imported weapons/Soldier.glb", import.meta.url).href;
+const soldierLoader = new GLTFLoader();
+let soldierAssetPromise = null;
+let soldierAsset = null;
 
-export function createPlayerMesh(isLocal = false) {
-  if (isLocal) {
-    const localMesh = new THREE.Mesh(new THREE.CapsuleGeometry(0.35, 1.1, 6, 10), localMaterial);
-    localMesh.position.y = 1.2;
-    return localMesh;
+export function preloadPlayerAppearanceAssets() {
+  if (!soldierAssetPromise) {
+    soldierAssetPromise = soldierLoader.loadAsync(soldierUrl).then((asset) => {
+      soldierAsset = asset;
+      return asset;
+    });
+  }
+  return soldierAssetPromise;
+}
+
+function cloneSoldierMaterial(material) {
+  const clonedMaterial = material.clone();
+  clonedMaterial.side = THREE.FrontSide;
+  return clonedMaterial;
+}
+
+function prepareSoldierModel(sourceScene) {
+  const model = cloneSkeleton(sourceScene);
+  const teamMaterials = [];
+
+  model.traverse((object) => {
+    if (!object.isMesh) return;
+
+    object.castShadow = false;
+    object.receiveShadow = false;
+
+    if (Array.isArray(object.material)) {
+      object.material = object.material.map(cloneSoldierMaterial);
+    } else if (object.material) {
+      object.material = cloneSoldierMaterial(object.material);
+    }
+
+    const materials = Array.isArray(object.material) ? object.material : [object.material];
+    materials.forEach((material) => {
+      if (material && /^(shirt|jacket)$/i.test(material.name || "")) {
+        material.userData.originalColor = material.color.clone();
+        teamMaterials.push(material);
+      }
+    });
+  });
+
+  model.updateMatrixWorld(true);
+  let bounds = new THREE.Box3().setFromObject(model);
+  const size = bounds.getSize(new THREE.Vector3());
+  const targetHeight = 1.82;
+  if (size.y > 0.001) {
+    model.scale.multiplyScalar(targetHeight / size.y);
   }
 
-  const root = new THREE.Group();
-  root.position.y = 0;
-  const bodyGroup = new THREE.Group();
-  bodyGroup.rotation.y = Math.PI;
-  root.add(bodyGroup);
+  model.updateMatrixWorld(true);
+  bounds = new THREE.Box3().setFromObject(model);
+  const center = bounds.getCenter(new THREE.Vector3());
+  model.position.x -= center.x;
+  model.position.y -= bounds.min.y;
+  model.position.z -= center.z;
+  model.updateMatrixWorld(true);
 
-  const skinMaterial = new THREE.MeshStandardMaterial({ color: 0xd9ad84, roughness: 0.78, flatShading: true });
-  const shirtMaterial = new THREE.MeshStandardMaterial({ color: 0x4f8cf6, roughness: 0.75, flatShading: true });
-  const pantMaterial = new THREE.MeshStandardMaterial({ color: 0x1e2f4f, roughness: 0.88, flatShading: true });
-  const shoeMaterial = new THREE.MeshStandardMaterial({ color: 0x111317, roughness: 0.95, flatShading: true });
-  const accMaterial = new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.8, flatShading: true });
-  const visorMaterial = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.2, metalness: 0.8, flatShading: true });
+  return { model, teamMaterials };
+}
 
-  const torsoGroup = new THREE.Group();
-  torsoGroup.position.set(0, 1.44, 0);
-
-  const chest = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.5, 0.3), shirtMaterial);
-  chest.position.y = 0.1;
-  torsoGroup.add(chest);
-
-  const abdomen = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.2, 0.25), shirtMaterial);
-  abdomen.position.y = -0.25;
-  torsoGroup.add(abdomen);
-
-  const belt = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.1, 0.28), accMaterial);
-  belt.position.y = -0.35;
-  torsoGroup.add(belt);
-
-  const backpack = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.5, 0.2), accMaterial);
-  backpack.position.set(0, 0, -0.2);
-  torsoGroup.add(backpack);
-  bodyGroup.add(torsoGroup);
-
-  const headGroup = new THREE.Group();
-  headGroup.position.set(0, 1.95, 0);
-
-  const head = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.3, 0.3), skinMaterial);
-  headGroup.add(head);
-
-  const helmet = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.15, 0.32), accMaterial);
-  helmet.position.y = 0.12;
-  headGroup.add(helmet);
-
-  const visor = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.1, 0.1), visorMaterial);
-  visor.position.set(0, 0, 0.15);
-  headGroup.add(visor);
-  bodyGroup.add(headGroup);
-
-  const armGeo = new THREE.BoxGeometry(0.15, 0.45, 0.15);
-  const handGeo = new THREE.BoxGeometry(0.12, 0.15, 0.12);
-
-  const leftArmGroup = new THREE.Group();
-  leftArmGroup.position.set(-0.35, 1.65, 0);
-  const leftArm = new THREE.Mesh(armGeo, shirtMaterial);
-  leftArm.position.y = -0.225;
-  leftArmGroup.add(leftArm);
-  const leftHand = new THREE.Mesh(handGeo, skinMaterial);
-  leftHand.position.y = -0.525;
-  leftArmGroup.add(leftHand);
-  leftArmGroup.rotation.z = 0.1;
-  bodyGroup.add(leftArmGroup);
-
-  const rightArmGroup = new THREE.Group();
-  rightArmGroup.position.set(0.35, 1.65, 0);
-  const rightArm = new THREE.Mesh(armGeo, shirtMaterial);
-  rightArm.position.y = -0.225;
-  rightArmGroup.add(rightArm);
-  const rightHand = new THREE.Mesh(handGeo, skinMaterial);
-  rightHand.position.y = -0.525;
-  rightArmGroup.add(rightHand);
-
-  const gunMaterial = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.7, flatShading: true });
-  const gunBody = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.15, 0.45), gunMaterial);
-  gunBody.position.set(0, -0.525, 0.15);
-  rightArmGroup.add(gunBody);
-  const gunBarrel = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.04, 0.3), gunMaterial);
-  gunBarrel.position.set(0, -0.48, 0.45);
-  rightArmGroup.add(gunBarrel);
-
-  rightArmGroup.rotation.z = -0.1;
-  bodyGroup.add(rightArmGroup);
-
-  const legGeo = new THREE.BoxGeometry(0.18, 0.5, 0.18);
-  const leftLegGroup = new THREE.Group();
-  leftLegGroup.position.set(-0.15, 0.9, 0);
-  const leftLeg = new THREE.Mesh(legGeo, pantMaterial);
-  leftLeg.position.y = -0.25;
-  leftLegGroup.add(leftLeg);
-  const leftShoe = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.15, 0.25), shoeMaterial);
-  leftShoe.position.set(0, -0.575, 0.03);
-  leftLegGroup.add(leftShoe);
-  bodyGroup.add(leftLegGroup);
-
-  const rightLegGroup = new THREE.Group();
-  rightLegGroup.position.set(0.15, 0.9, 0);
-  const rightLeg = new THREE.Mesh(legGeo, pantMaterial);
-  rightLeg.position.y = -0.25;
-  rightLegGroup.add(rightLeg);
-  const rightShoe = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.15, 0.25), shoeMaterial);
-  rightShoe.position.set(0, -0.575, 0.03);
-  rightLegGroup.add(rightShoe);
-  bodyGroup.add(rightLegGroup);
-
+function createHitbox() {
   const hitbox = new THREE.Mesh(
     new THREE.CapsuleGeometry(0.35, 1.1, 6, 10),
     new THREE.MeshBasicMaterial({
@@ -121,26 +78,58 @@ export function createPlayerMesh(isLocal = false) {
     })
   );
   hitbox.position.y = 1.2;
+  return hitbox;
+}
+
+export function createPlayerMesh(isLocal = false) {
+  if (isLocal) {
+    const localMesh = new THREE.Mesh(new THREE.CapsuleGeometry(0.35, 1.1, 6, 10), localMaterial);
+    localMesh.position.y = 1.2;
+    return localMesh;
+  }
+
+  if (!soldierAssetPromise) {
+    throw new Error("Soldier.glb doit être préchargé avant de créer un joueur distant.");
+  }
+
+  if (!soldierAsset) {
+    throw new Error("Soldier.glb n'est pas encore chargé.");
+  }
+
+  const root = new THREE.Group();
+  const modelPivot = new THREE.Group();
+  modelPivot.rotation.y = Math.PI;
+  root.add(modelPivot);
+
+  const { model, teamMaterials } = prepareSoldierModel(soldierAsset.scene);
+  modelPivot.add(model);
+
+  const hitbox = createHitbox();
   root.add(hitbox);
 
   const nameTag = createNameTagSprite("Player");
-  nameTag.position.set(0, 2.45, 0);
+  nameTag.position.set(0, 2.08, 0);
   root.add(nameTag);
+
+  const mixer = new THREE.AnimationMixer(model);
+  const idleClip = soldierAsset.animations?.[0];
+  if (idleClip) {
+    const action = mixer.clipAction(idleClip);
+    action.setLoop(THREE.LoopRepeat, Infinity);
+    action.play();
+  }
 
   root.userData.hitbox = hitbox;
   root.userData.nameTag = nameTag;
-  root.userData.materials = { shirtMaterial };
-  root.userData.groundOffset = 0.48;
-  root.userData.parts = {
-    torso: torsoGroup,
-    head: headGroup,
-    leftArm: leftArmGroup,
-    rightArm: rightArmGroup,
-    leftLeg: leftLegGroup,
-    rightLeg: rightLegGroup
-  };
+  root.userData.materials = { teamMaterials };
+  root.userData.groundOffset = 0;
+  root.userData.mixer = mixer;
 
   return root;
+}
+
+export async function resolvePlayerAppearanceAssets() {
+  return preloadPlayerAppearanceAssets();
 }
 
 export function createNameTagSprite(name) {
@@ -160,7 +149,7 @@ export function createNameTagSprite(name) {
     depthWrite: false
   });
   const sprite = new THREE.Sprite(spriteMaterial);
-  sprite.scale.set(1.9, 0.46, 1);
+  sprite.scale.set(1.55, 0.37, 1);
   sprite.renderOrder = 9;
   sprite.userData = { canvas: canvasTag, ctx, texture, currentName: "", currentColor: "" };
   updateNameTagSprite(sprite, name, null);
@@ -233,10 +222,15 @@ function roundRect(ctx, x, y, width, height, radius) {
 }
 
 export function applyRemoteTeamStyle(root, team, playerId) {
-  const shirtMaterial = root?.userData?.materials?.shirtMaterial;
-  if (!shirtMaterial) return;
+  const teamMaterials = root?.userData?.materials?.teamMaterials;
+  if (!Array.isArray(teamMaterials) || teamMaterials.length === 0) return;
+
   const playerColor = colorFromPlayerId(playerId);
-  shirtMaterial.color.copy(playerColor);
+  teamMaterials.forEach((material) => {
+    const originalColor = material.userData.originalColor;
+    if (!originalColor) return;
+    material.color.copy(originalColor).lerp(playerColor, 0.16);
+  });
 }
 
 export function setRemoteAliveVisual(root, alive) {

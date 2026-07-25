@@ -36,6 +36,7 @@ export const VIEW_RECOIL_DECAY = 15;
 export const VIEW_RECOIL_BOB_SUPPRESS_K = 0.48;
 export const VIEW_RECOIL_NORM_CAP = 0.16;
 export const KNIFE_MOVE_SPEED_MULTIPLIER = 1.12;
+export const PRIMARY_WEAPONS = ["shotgun", "sniper", "ak47"];
 
 export const WEAPON_STATS = {
   shotgun: {
@@ -96,6 +97,13 @@ export const WEAPON_STATS = {
     melee: true,
     zoomFov: BASE_FOV,
     viewRecoil: { z: 0.09, y: -0.018, rotX: 0.12, rotZ: 0.08 }
+  },
+  grenade: {
+    label: "Grenade",
+    auto: false,
+    throwable: true,
+    chargeable: true,
+    zoomFov: BASE_FOV
   }
 };
 
@@ -103,7 +111,10 @@ export const GRENADE_CONFIG = {
   pickupRadius: 1.7,
   radius: 0.18,
   gravity: 24,
-  throwSpeed: 16,
+  throwSpeed: 32,
+  minThrowSpeed: 14,
+  maxThrowSpeed: 44,
+  throwChargeMs: 1400,
   fuseMs: 1600,
   blastRadius: 8.5,
   bounceDamping: 0.62,

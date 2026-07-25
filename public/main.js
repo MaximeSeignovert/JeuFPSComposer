@@ -22,7 +22,7 @@ import { createSceneSetup } from "./js/world/scene.js";
 import { state } from "./js/state.js";
 
 const sceneSetup = createSceneSetup(dom.canvas);
-const viewModel = createViewModel();
+const viewModel = await createViewModel();
 sceneSetup.camera.add(viewModel);
 
 const ctx = createGameContext({
@@ -42,11 +42,11 @@ function resizeRendererToViewport() {
 ctx.controllers.world = createWorldRenderer(ctx);
 ctx.controllers.effects = createEffectsController(ctx);
 ctx.controllers.sound = createSoundController(ctx);
-ctx.controllers.remotePlayers = createRemotePlayersController(ctx);
+ctx.controllers.remotePlayers = await createRemotePlayersController(ctx);
 ctx.controllers.weapons = createWeaponsController(ctx);
 ctx.controllers.hud = createHudController(ctx);
 ctx.controllers.player = createPlayerController(ctx);
-ctx.controllers.grenades = createGrenadesController(ctx);
+ctx.controllers.grenades = await createGrenadesController(ctx);
 ctx.controllers.socket = createSocketClient(ctx);
 
 ctx.controllers.world.build();
@@ -55,7 +55,7 @@ ctx.controllers.weapons.setActiveWeaponModel(state.weapon);
 dom.weaponChoice.addEventListener("click", (event) => {
   const target = event.target.closest("button[data-weapon]");
   if (!target) return;
-  ctx.controllers.weapons.selectWeapon(target.getAttribute("data-weapon"));
+  ctx.controllers.weapons.selectPrimaryWeapon(target.getAttribute("data-weapon"));
 });
 
 window.addEventListener("resize", () => {
@@ -82,24 +82,28 @@ initializeCameraSensitivityUi();
 
 bindTouchControls({
   beginPrimaryFire: ctx.controllers.weapons.beginPrimaryFire,
+  cancelPrimaryFire: ctx.controllers.weapons.cancelPrimaryFire,
+  cycleWeaponSlot: ctx.controllers.weapons.cycleWeaponSlot,
   endPrimaryFire: ctx.controllers.weapons.endPrimaryFire,
+  equipGrenade: ctx.controllers.weapons.equipGrenade,
   getWeaponStats: ctx.controllers.weapons.getWeaponStats,
   jump: ctx.controllers.player.jump,
   reloadWeapon: ctx.controllers.weapons.reloadWeapon,
   resizeRendererToViewport,
-  throwGrenade: ctx.controllers.grenades.throwGrenade,
   togglePauseMenu: ctx.controllers.hud.togglePauseMenu,
   updateHudKeyHints
 });
 
 bindKeyboardMouseControls({
   beginPrimaryFire: ctx.controllers.weapons.beginPrimaryFire,
+  cancelPrimaryFire: ctx.controllers.weapons.cancelPrimaryFire,
+  cycleWeaponSlot: ctx.controllers.weapons.cycleWeaponSlot,
   endPrimaryFire: ctx.controllers.weapons.endPrimaryFire,
   endPrimaryFireFromMouseEvent: ctx.controllers.weapons.endPrimaryFireFromMouseEvent,
+  equipGrenade: ctx.controllers.weapons.equipGrenade,
   jump: ctx.controllers.player.jump,
   reloadWeapon: ctx.controllers.weapons.reloadWeapon,
   setPauseMenu: ctx.controllers.hud.setPauseMenu,
-  throwGrenade: ctx.controllers.grenades.throwGrenade,
   togglePauseMenu: ctx.controllers.hud.togglePauseMenu
 });
 

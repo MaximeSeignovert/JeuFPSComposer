@@ -5,8 +5,11 @@ import { keyBindings } from "./keybinding-ui.js";
 import { resetTouchInput, shouldUsePointerLock } from "./touch-controls.js";
 
 const PAUSE_OVERLAY_CLOSE_COOLDOWN_MS = 300;
+const WEAPON_WHEEL_COOLDOWN_MS = 120;
 
 export function bindKeyboardMouseControls(options) {
+  let lastWeaponWheelAt = 0;
+
   document.addEventListener("keydown", (e) => {
     const pressedKey = getKeyBindingFromEvent(e);
     if (pressedKey === keyBindings.pause && state.joined) {
@@ -17,7 +20,7 @@ export function bindKeyboardMouseControls(options) {
     if (pressedKey === keyBindings.grenade) {
       if (state.joined && !state.pauseOpen && state.isAlive) {
         e.preventDefault();
-        options.throwGrenade();
+        options.equipGrenade();
       }
       return;
     }
@@ -66,6 +69,18 @@ export function bindKeyboardMouseControls(options) {
     if (!state.joined || state.pauseOpen || !state.isAlive) return;
     state.isAiming = true;
   });
+  canvas.addEventListener(
+    "wheel",
+    (event) => {
+      if (!state.joined || state.pauseOpen || !state.isAlive || event.deltaY === 0) return;
+      event.preventDefault();
+      const now = performance.now();
+      if (now - lastWeaponWheelAt < WEAPON_WHEEL_COOLDOWN_MS) return;
+      lastWeaponWheelAt = now;
+      options.cycleWeaponSlot(event.deltaY > 0 ? 1 : -1);
+    },
+    { passive: false }
+  );
   canvas.addEventListener("mouseup", (event) => {
     if (event.button === 0) options.endPrimaryFireFromMouseEvent(event);
     if (event.button === 2) state.isAiming = false;
@@ -74,7 +89,7 @@ export function bindKeyboardMouseControls(options) {
     if (event.button === 0) options.endPrimaryFireFromMouseEvent(event);
   });
   window.addEventListener("blur", () => {
-    options.endPrimaryFire();
+    options.cancelPrimaryFire();
     state.isAiming = false;
     resetTouchInput();
   });

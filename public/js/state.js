@@ -4,6 +4,8 @@ export const state = {
   roomId: null,
   team: null,
   weapon: "ak47",
+  weaponSlots: ["ak47", "knife"],
+  activeWeaponSlot: 0,
   players: new Map(),
   keys: new Set(),
   yaw: 0,
