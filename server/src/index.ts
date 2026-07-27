@@ -1,4 +1,5 @@
 import express from "express";
+import fs from "fs";
 import net from "net";
 import path from "path";
 import { matchMaker, Server } from "colyseus";
@@ -7,7 +8,13 @@ import { FpsRoom } from "./FpsRoom";
 
 const DEFAULT_PORT = 3000;
 const PORT = Number(process.env.PORT || DEFAULT_PORT);
-const rootDir = path.resolve(__dirname, "..", "..", "..");
+const rootDirCandidates = [
+  path.resolve(__dirname, "..", ".."),
+  path.resolve(__dirname, "..", "..", "..")
+];
+const rootDir = rootDirCandidates.find((candidate) =>
+  fs.existsSync(path.join(candidate, "public"))
+) || rootDirCandidates[0];
 
 const gameServer = new Server({
   transport: new WebSocketTransport(),
