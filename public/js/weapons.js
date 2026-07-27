@@ -369,18 +369,12 @@ function poseKnifeArms(armsScene, knifeGroup) {
   rotateBoneAroundWorldAxis(rightLowerArm, horizontalAxis, 0.27);
   knifeGroup.updateMatrixWorld(true);
   rotateBoneAroundWorldAxis(rightHand, screenDepthAxis, 0.08);
-
-  curlFinger(
+  // Ferme franchement les doigts autour du couteau pour obtenir un vrai poing.
+  rotateFingerTips(
     armsScene,
-    ["DoubleFingersBeginning.001", "DoubleFingers.R.001", "DoubleFingersTip.R.001"],
-    -0.86
+    ["DoubleFingersTip.R.001", "IndexTip.R.001", "ThumbTip.R.001"],
+    -0.8
   );
-  curlFinger(armsScene, ["IndexBeginning.R.001", "Index.R.001", "IndexTip.R.001"], -0.76);
-  curlFinger(armsScene, ["ThumbBeginning.R.001", "Thumb.R.001", "ThumbTip.R.001"], 0.38);
-
-  curlFinger(armsScene, ["DoubleFingersBeginning", "DoubleFingers.L", "DoubleFingersTip.L"], 0.34);
-  curlFinger(armsScene, ["IndexBeginning.L", "Index.L", "IndexTip.L"], 0.18);
-  curlFinger(armsScene, ["ThumbBeginning.L", "Thumb.L", "ThumbTip.L"], -0.06);
   knifeGroup.updateMatrixWorld(true);
 }
 
@@ -445,32 +439,28 @@ async function createGrenadeRig() {
   const grenadeGroup = new THREE.Group();
   const armsFrame = frameScene(armsScene, 1.05, [0, -0.07, -0.18], [0, Math.PI * 0.5, 0]);
   const grenadeFrame = frameScene(grenadeScene, 0.27, [0, 0, 0], [0, 0, 0]);
+  const screenDepthAxis = new THREE.Vector3(0, 0, 1);
   const handBone = getArmBone(armsScene, "Hand.R.001");
   const gripBone = getArmBone(armsScene, "DoubleFingersBeginning.001");
   const leftUpperArm = getArmBone(armsScene, "UpperArm.L");
+  const rightHand = getArmBone(armsScene, "Hand.R.001");
   grenadeGroup.add(armsFrame, grenadeFrame);
   grenadeGroup.updateMatrixWorld(true);
   poseKnifeArms(armsScene, grenadeGroup);
   // Ferme franchement les doigts autour de la grenade pour obtenir un vrai poing.
-  curlFinger(
-    armsScene,
-    ["DoubleFingersBeginning.001", "DoubleFingers.R.001", "DoubleFingersTip.R.001"],
-    -0.58
-  );
-  curlFinger(armsScene, ["IndexBeginning.R.001", "Index.R.001", "IndexTip.R.001"], -0.66);
-  curlFinger(armsScene, ["ThumbBeginning.R.001", "Thumb.R.001", "ThumbTip.R.001"], 0.52);
-  // Les phalanges terminales se replient vers la paume sur l'axe Z.
   rotateFingerTips(
     armsScene,
     ["DoubleFingersTip.R.001", "IndexTip.R.001", "ThumbTip.R.001"],
-    -0.4
+    -0.8
   );
   grenadeGroup.updateMatrixWorld(true);
-  grenadeGroup.position.set(-0.22, 0.02, 0);
+  grenadeGroup.position.set(-0.17, 0.02, 0);
 
   // Le lancer se lit mieux avec une seule main : le bras gauche du rig de couteau
   // traversait tout l'écran alors qu'il ne participe pas à la prise de la grenade.
   leftUpperArm?.scale.setScalar(0.001);
+  grenadeGroup.updateMatrixWorld(true);
+  rotateBoneAroundWorldAxis(rightHand, screenDepthAxis, -0.95);
   grenadeGroup.updateMatrixWorld(true);
 
   const armMesh = armsScene.getObjectByName("ArmModel") || null;
