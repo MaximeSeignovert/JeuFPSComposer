@@ -444,14 +444,14 @@ async function createGrenadeRig() {
   grenadeGroup.add(armsFrame, grenadeFrame);
   grenadeGroup.updateMatrixWorld(true);
   poseKnifeArms(armsScene, grenadeGroup);
-  // Ressere davantage les doigts autour de la grenade pour fermer la prise.
+  // Ferme franchement les doigts autour de la grenade pour obtenir un vrai poing.
   curlFinger(
     armsScene,
     ["DoubleFingersBeginning.001", "DoubleFingers.R.001", "DoubleFingersTip.R.001"],
-    -0.18
+    -0.58
   );
-  curlFinger(armsScene, ["IndexBeginning.R.001", "Index.R.001", "IndexTip.R.001"], -0.16);
-  curlFinger(armsScene, ["ThumbBeginning.R.001", "Thumb.R.001", "ThumbTip.R.001"], 0.18);
+  curlFinger(armsScene, ["IndexBeginning.R.001", "Index.R.001", "IndexTip.R.001"], -0.66);
+  curlFinger(armsScene, ["ThumbBeginning.R.001", "Thumb.R.001", "ThumbTip.R.001"], 0.52);
   grenadeGroup.updateMatrixWorld(true);
   grenadeGroup.position.set(-0.22, 0.02, 0);
 
