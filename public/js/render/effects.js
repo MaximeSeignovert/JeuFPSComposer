@@ -67,43 +67,6 @@ export function createEffectsController(ctx) {
     ctx.flashes.push({ mesh: flash, life: 0.06 });
   }
 
-  function spawnKnifeSlash(origin, direction, localShot = false) {
-    if (!origin) return;
-    const slashDir = new THREE.Vector3(
-      Number(direction?.x) || 0,
-      Number(direction?.y) || 0,
-      Number(direction?.z) || -1
-    );
-    if (slashDir.lengthSq() <= 0.0001) slashDir.set(0, 0, -1);
-    slashDir.normalize();
-
-    const slashRadius = localShot ? 0.32 : 0.28;
-    const slash = new THREE.Group();
-    const arcMaterial = new THREE.MeshBasicMaterial({
-      color: localShot ? 0xf8fbff : 0xffd6d6,
-      transparent: true,
-      opacity: localShot ? 0.66 : 0.48,
-      side: THREE.DoubleSide
-    });
-    const mainArc = new THREE.Mesh(
-      new THREE.RingGeometry(slashRadius, slashRadius + 0.045, 32, 1, -0.1, 1.75),
-      arcMaterial
-    );
-    const innerArc = new THREE.Mesh(
-      new THREE.RingGeometry(slashRadius * 0.74, slashRadius * 0.76, 24, 1, 0.1, 1.35),
-      arcMaterial.clone()
-    );
-    innerArc.material.opacity *= 0.55;
-    slash.add(mainArc);
-    slash.add(innerArc);
-    slash.position.set(origin.x, origin.y, origin.z);
-    slash.position.addScaledVector(slashDir, localShot ? 0.08 : 0.04);
-    slash.lookAt(slash.position.x + slashDir.x, slash.position.y + slashDir.y, slash.position.z + slashDir.z);
-    slash.rotateZ(localShot ? -2.3 : -2.1);
-    scene.add(slash);
-    ctx.flashes.push({ mesh: slash, life: 0.16, maxLife: 0.16 });
-  }
-
   function traceImpact(origin, direction, maxDistance = 120, reportHit = false, damage = 0) {
     const rayOrigin = new THREE.Vector3(origin.x, origin.y, origin.z);
     const rayDir = new THREE.Vector3(direction.x, direction.y, direction.z).normalize();
@@ -301,7 +264,6 @@ export function createEffectsController(ctx) {
 
   return {
     spawnBulletVisual,
-    spawnKnifeSlash,
     spawnMuzzleFlash,
     traceImpact,
     traceMeleeSweep,

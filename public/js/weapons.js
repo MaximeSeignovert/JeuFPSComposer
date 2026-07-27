@@ -223,21 +223,6 @@ async function createFirearm(weapon, replacementFile = null) {
   return weaponGroup;
 }
 
-function addCapsuleBetween(parent, start, end, radius, material) {
-  const a = new THREE.Vector3(...start);
-  const b = new THREE.Vector3(...end);
-  const direction = b.clone().sub(a);
-  const length = direction.length();
-  const mesh = new THREE.Mesh(
-    new THREE.CapsuleGeometry(radius, Math.max(0.02, length - radius * 2), 5, 10),
-    material
-  );
-  mesh.position.copy(a).add(b).multiplyScalar(0.5);
-  mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.normalize());
-  parent.add(mesh);
-  return mesh;
-}
-
 async function createStandaloneWeapon(fileName, targetSize, modelPosition, modelRotation) {
   const { scene } = await instantiateAsset(fileName);
   const weaponGroup = new THREE.Group();
@@ -253,77 +238,143 @@ function rotateBoneAroundWorldAxis(bone, axis, angle) {
   bone.updateMatrixWorld(true);
 }
 
+function getArmBone(armsScene, name) {
+  return armsScene.getObjectByName(name) || armsScene.getObjectByName(name.replace(/\./g, ""));
+}
+
 function curlFinger(armsScene, boneNames, angle) {
   boneNames.forEach((name, index) => {
-    const bone = armsScene.getObjectByName(name);
+    const bone = getArmBone(armsScene, name);
     if (bone) bone.rotateX(angle * (index === 0 ? 0.78 : 1));
   });
+}
+
+function lerpBoneOffset(from, to, amount) {
+  return {
+    depth: THREE.MathUtils.lerp(from.depth, to.depth, amount),
+    vertical: THREE.MathUtils.lerp(from.vertical, to.vertical, amount),
+    horizontal: THREE.MathUtils.lerp(from.horizontal, to.horizontal, amount)
+  };
+}
+
+function applyKnifeBoneOffset(knifeGroup, bone, offset, axes) {
+  if (!bone) return;
+  rotateBoneAroundWorldAxis(bone, axes.depth, offset.depth);
+  rotateBoneAroundWorldAxis(bone, axes.vertical, offset.vertical);
+  rotateBoneAroundWorldAxis(bone, axes.horizontal, offset.horizontal);
+  knifeGroup.updateMatrixWorld(true);
+}
+
+function animateKnifeArmRig(knifeGroup, attackState, progress) {
+  if (!attackState?.bones?.length) return;
+
+  attackState.bones.forEach((bone) => {
+    bone.quaternion.copy(attackState.baseQuaternions.get(bone));
+  });
+  knifeGroup.updateMatrixWorld(true);
+
+  const zero = { depth: 0, vertical: 0, horizontal: 0 };
+  const windup = {
+    upperArm: { depth: -0.12, vertical: 0.12, horizontal: -0.04 },
+    lowerArm: { depth: 0.16, vertical: 0.18, horizontal: -0.12 },
+    hand: { depth: 0.12, vertical: 0, horizontal: 0 }
+  };
+  const strike = {
+    upperArm: { depth: 0.18, vertical: -0.24, horizontal: 0.08 },
+    lowerArm: { depth: -0.35, vertical: -0.46, horizontal: 0.24 },
+    hand: { depth: -0.24, vertical: 0.04, horizontal: 0.05 }
+  };
+  const followThrough = {
+    upperArm: { depth: 0.08, vertical: -0.08, horizontal: 0.03 },
+    lowerArm: { depth: -0.14, vertical: -0.16, horizontal: 0.12 },
+    hand: { depth: -0.1, vertical: 0.02, horizontal: 0.03 }
+  };
+
+  let offsets = { upperArm: zero, lowerArm: zero, hand: zero };
+  if (progress < 0.2) {
+    const amount = THREE.MathUtils.smoothstep(progress / 0.2, 0, 1);
+    offsets = {
+      upperArm: lerpBoneOffset(zero, windup.upperArm, amount),
+      lowerArm: lerpBoneOffset(zero, windup.lowerArm, amount),
+      hand: lerpBoneOffset(zero, windup.hand, amount)
+    };
+  } else if (progress < 0.52) {
+    const amount = 1 - Math.pow(1 - (progress - 0.2) / 0.32, 3);
+    offsets = {
+      upperArm: lerpBoneOffset(windup.upperArm, strike.upperArm, amount),
+      lowerArm: lerpBoneOffset(windup.lowerArm, strike.lowerArm, amount),
+      hand: lerpBoneOffset(windup.hand, strike.hand, amount)
+    };
+  } else if (progress < 0.7) {
+    const amount = THREE.MathUtils.smoothstep((progress - 0.52) / 0.18, 0, 1);
+    offsets = {
+      upperArm: lerpBoneOffset(strike.upperArm, followThrough.upperArm, amount),
+      lowerArm: lerpBoneOffset(strike.lowerArm, followThrough.lowerArm, amount),
+      hand: lerpBoneOffset(strike.hand, followThrough.hand, amount)
+    };
+  } else {
+    const amount = THREE.MathUtils.smoothstep((progress - 0.7) / 0.3, 0, 1);
+    offsets = {
+      upperArm: lerpBoneOffset(followThrough.upperArm, zero, amount),
+      lowerArm: lerpBoneOffset(followThrough.lowerArm, zero, amount),
+      hand: lerpBoneOffset(followThrough.hand, zero, amount)
+    };
+  }
+
+  const axes = {
+    depth: new THREE.Vector3(0, 0, 1),
+    vertical: new THREE.Vector3(0, 1, 0),
+    horizontal: new THREE.Vector3(1, 0, 0)
+  };
+  applyKnifeBoneOffset(knifeGroup, attackState.upperArm, offsets.upperArm, axes);
+  applyKnifeBoneOffset(knifeGroup, attackState.lowerArm, offsets.lowerArm, axes);
+  applyKnifeBoneOffset(knifeGroup, attackState.hand, offsets.hand, axes);
+  knifeGroup.updateMatrixWorld(true);
 }
 
 function poseKnifeArms(armsScene, knifeGroup) {
   const horizontalAxis = new THREE.Vector3(1, 0, 0);
   const verticalAxis = new THREE.Vector3(0, 1, 0);
   const screenDepthAxis = new THREE.Vector3(0, 0, 1);
-  const leftUpperArm = armsScene.getObjectByName("UpperArmL");
-  const leftLowerArm = armsScene.getObjectByName("LowerArmL");
-  const rightUpperArm = armsScene.getObjectByName("UpperArmR001");
-  const rightLowerArm = armsScene.getObjectByName("LowerArmR001");
-  const rightHand = armsScene.getObjectByName("HandR001");
+  const leftUpperArm = getArmBone(armsScene, "UpperArm.L");
+  const leftLowerArm = getArmBone(armsScene, "LowerArm.L");
+  const rightUpperArm = getArmBone(armsScene, "UpperArm.R.001");
+  const rightLowerArm = getArmBone(armsScene, "LowerArm.R.001");
+  const rightHand = getArmBone(armsScene, "Hand.R.001");
 
-  rotateBoneAroundWorldAxis(leftUpperArm, screenDepthAxis, -0.1);
-  rotateBoneAroundWorldAxis(leftUpperArm, verticalAxis, 0.25);
-  rotateBoneAroundWorldAxis(leftUpperArm, horizontalAxis, -0.1);
+  // La main gauche vient soutenir l'avant du couteau, au lieu de rester
+  // tendue au-dessus de la ligne de visée.
+  rotateBoneAroundWorldAxis(leftUpperArm, screenDepthAxis, -0.22);
+  rotateBoneAroundWorldAxis(leftUpperArm, verticalAxis, 0.42);
+  rotateBoneAroundWorldAxis(leftUpperArm, horizontalAxis, -0.28);
   knifeGroup.updateMatrixWorld(true);
-  rotateBoneAroundWorldAxis(leftLowerArm, screenDepthAxis, 0.3);
-  rotateBoneAroundWorldAxis(leftLowerArm, verticalAxis, -0.35);
-  rotateBoneAroundWorldAxis(leftLowerArm, horizontalAxis, 0.18);
+  rotateBoneAroundWorldAxis(leftLowerArm, screenDepthAxis, 0.42);
+  rotateBoneAroundWorldAxis(leftLowerArm, verticalAxis, -0.18);
+  rotateBoneAroundWorldAxis(leftLowerArm, horizontalAxis, 0.3);
 
   knifeGroup.updateMatrixWorld(true);
-  rotateBoneAroundWorldAxis(rightUpperArm, screenDepthAxis, 0.12);
-  rotateBoneAroundWorldAxis(rightUpperArm, verticalAxis, -0.25);
-  rotateBoneAroundWorldAxis(rightUpperArm, horizontalAxis, -0.1);
+  rotateBoneAroundWorldAxis(rightUpperArm, screenDepthAxis, 0.08);
+  rotateBoneAroundWorldAxis(rightUpperArm, verticalAxis, -0.3);
+  rotateBoneAroundWorldAxis(rightUpperArm, horizontalAxis, -0.16);
   knifeGroup.updateMatrixWorld(true);
-  rotateBoneAroundWorldAxis(rightLowerArm, screenDepthAxis, -0.4);
-  rotateBoneAroundWorldAxis(rightLowerArm, verticalAxis, 0.35);
-  rotateBoneAroundWorldAxis(rightLowerArm, horizontalAxis, 0.2);
+  rotateBoneAroundWorldAxis(rightLowerArm, screenDepthAxis, -0.46);
+  rotateBoneAroundWorldAxis(rightLowerArm, verticalAxis, 0.42);
+  rotateBoneAroundWorldAxis(rightLowerArm, horizontalAxis, 0.27);
   knifeGroup.updateMatrixWorld(true);
-  rotateBoneAroundWorldAxis(rightHand, screenDepthAxis, 0.12);
+  rotateBoneAroundWorldAxis(rightHand, screenDepthAxis, 0.08);
 
   curlFinger(
     armsScene,
-    ["DoubleFingersBeginning001", "DoubleFingersR001", "DoubleFingersTipR001"],
+    ["DoubleFingersBeginning.001", "DoubleFingers.R.001", "DoubleFingersTip.R.001"],
     -0.86
   );
-  curlFinger(armsScene, ["IndexBeginningR001", "IndexR001", "IndexTipR001"], -0.76);
-  curlFinger(armsScene, ["ThumbBeginningR001", "ThumbR001", "ThumbTipR001"], 0.38);
+  curlFinger(armsScene, ["IndexBeginning.R.001", "Index.R.001", "IndexTip.R.001"], -0.76);
+  curlFinger(armsScene, ["ThumbBeginning.R.001", "Thumb.R.001", "ThumbTip.R.001"], 0.38);
 
-  curlFinger(armsScene, ["DoubleFingersBeginning", "DoubleFingersL", "DoubleFingersTipL"], 0.62);
-  curlFinger(armsScene, ["IndexBeginningL", "IndexL", "IndexTipL"], 0.52);
-  curlFinger(armsScene, ["ThumbBeginningL", "ThumbL", "ThumbTipL"], -0.2);
+  curlFinger(armsScene, ["DoubleFingersBeginning", "DoubleFingers.L", "DoubleFingersTip.L"], 0.34);
+  curlFinger(armsScene, ["IndexBeginning.L", "Index.L", "IndexTip.L"], 0.18);
+  curlFinger(armsScene, ["ThumbBeginning.L", "Thumb.L", "ThumbTip.L"], -0.06);
   knifeGroup.updateMatrixWorld(true);
-}
-
-function hideImportedSleeves(armRoot) {
-  armRoot?.traverse((object) => {
-    const materials = Array.isArray(object.material) ? object.material : [object.material];
-    materials.forEach((material) => {
-      if (!material || !/^shirt$/i.test(material.name || "")) return;
-      material.visible = false;
-    });
-  });
-}
-
-function addBentSleeve(knifeGroup, shoulderBone, elbowBone, wristBone, material) {
-  if (!shoulderBone || !elbowBone || !wristBone) return;
-  knifeGroup.updateMatrixWorld(true);
-  const shoulder = knifeGroup.worldToLocal(shoulderBone.getWorldPosition(new THREE.Vector3()));
-  const elbow = knifeGroup.worldToLocal(elbowBone.getWorldPosition(new THREE.Vector3()));
-  const wrist = knifeGroup.worldToLocal(wristBone.getWorldPosition(new THREE.Vector3()));
-  addCapsuleBetween(knifeGroup, shoulder.toArray(), elbow.toArray(), 0.078, material);
-  addCapsuleBetween(knifeGroup, elbow.toArray(), wrist.toArray(), 0.068, material);
-  const elbowJoint = new THREE.Mesh(new THREE.SphereGeometry(0.078, 10, 8), material);
-  elbowJoint.position.copy(elbow);
-  knifeGroup.add(elbowJoint);
 }
 
 async function createKnifeRig() {
@@ -334,43 +385,45 @@ async function createKnifeRig() {
 
   const knifeGroup = new THREE.Group();
   const armsFrame = frameScene(armsScene, 1.05, [0, -0.07, -0.18], [0, Math.PI * 0.5, 0]);
-  const knifeFrame = frameScene(knifeScene, 0.42, [0, 0, 0], [-0.8, 0, 0.48]);
-  const handBone = armsScene.getObjectByName("HandR001");
-  const gripBone = armsScene.getObjectByName("DoubleFingersBeginning001");
+  // Oriente la lame vers l'avant-gauche, dans le même plan que la vue FPS.
+  const knifeFrame = frameScene(knifeScene, 0.60, [0.5, 0, 0], [-0.8, 0, 1.2]);
+  // Présente le plat de la lame à la caméra sans changer la direction de la pointe.
+  knifeFrame.rotateY(Math.PI * 0.6);
+  const handBone = getArmBone(armsScene, "Hand.R.001");
+  const gripBone = getArmBone(armsScene, "DoubleFingersBeginning.001");
   knifeGroup.add(armsFrame, knifeFrame);
   knifeGroup.updateMatrixWorld(true);
   poseKnifeArms(armsScene, knifeGroup);
+  // Le couteau est tenu à une main : masque toute la hiérarchie du bras gauche.
+  const leftUpperArm = getArmBone(armsScene, "UpperArm.L");
+  leftUpperArm?.scale.setScalar(0.001);
+  knifeGroup.updateMatrixWorld(true);
 
   const armMesh = armsScene.getObjectByName("ArmModel") || null;
-  hideImportedSleeves(armMesh);
-  const sleeveMaterial = new THREE.MeshStandardMaterial({
-    color: 0x34442f,
-    roughness: 0.92,
-    metalness: 0,
-    flatShading: true
-  });
-  addBentSleeve(
-    knifeGroup,
-    armsScene.getObjectByName("UpperArmL"),
-    armsScene.getObjectByName("LowerArmL"),
-    armsScene.getObjectByName("HandL"),
-    sleeveMaterial
-  );
-  addBentSleeve(
-    knifeGroup,
-    armsScene.getObjectByName("UpperArmR001"),
-    armsScene.getObjectByName("LowerArmR001"),
-    armsScene.getObjectByName("HandR001"),
-    sleeveMaterial
-  );
 
   if (handBone) {
     const handPosition = (gripBone || handBone).getWorldPosition(new THREE.Vector3());
     const bladeDirection = new THREE.Vector3(0, 1, 0).applyQuaternion(knifeFrame.quaternion).normalize();
     knifeFrame.position.copy(handPosition).addScaledVector(bladeDirection, 0.12);
+    // Descend légèrement la poignée pour qu'elle repose au creux de la paume.
+    knifeFrame.position.y -= 0.035;
     knifeGroup.updateMatrixWorld(true);
     handBone.attach(knifeFrame);
   }
+
+  const knifeAttackBones = {
+    upperArm: getArmBone(armsScene, "UpperArm.R.001"),
+    lowerArm: getArmBone(armsScene, "LowerArm.R.001"),
+    hand: getArmBone(armsScene, "Hand.R.001")
+  };
+  const attackBones = Object.values(knifeAttackBones).filter(Boolean);
+  const knifeAttackState = {
+    ...knifeAttackBones,
+    bones: attackBones,
+    baseQuaternions: new Map(attackBones.map((bone) => [bone, bone.quaternion.clone()]))
+  };
+  knifeGroup.userData.animateKnifeAttack = (progress) =>
+    animateKnifeArmRig(knifeGroup, knifeAttackState, progress);
 
   knifeGroup.userData.armMesh = armMesh;
   return knifeGroup;
@@ -385,12 +438,21 @@ async function createGrenadeRig() {
   const grenadeGroup = new THREE.Group();
   const armsFrame = frameScene(armsScene, 1.05, [0, -0.07, -0.18], [0, Math.PI * 0.5, 0]);
   const grenadeFrame = frameScene(grenadeScene, 0.27, [0, 0, 0], [0, 0, 0]);
-  const handBone = armsScene.getObjectByName("HandR001");
-  const gripBone = armsScene.getObjectByName("DoubleFingersBeginning001");
-  const leftUpperArm = armsScene.getObjectByName("UpperArmL");
+  const handBone = getArmBone(armsScene, "Hand.R.001");
+  const gripBone = getArmBone(armsScene, "DoubleFingersBeginning.001");
+  const leftUpperArm = getArmBone(armsScene, "UpperArm.L");
   grenadeGroup.add(armsFrame, grenadeFrame);
   grenadeGroup.updateMatrixWorld(true);
   poseKnifeArms(armsScene, grenadeGroup);
+  // Ressere davantage les doigts autour de la grenade pour fermer la prise.
+  curlFinger(
+    armsScene,
+    ["DoubleFingersBeginning.001", "DoubleFingers.R.001", "DoubleFingersTip.R.001"],
+    -0.18
+  );
+  curlFinger(armsScene, ["IndexBeginning.R.001", "Index.R.001", "IndexTip.R.001"], -0.16);
+  curlFinger(armsScene, ["ThumbBeginning.R.001", "Thumb.R.001", "ThumbTip.R.001"], 0.18);
+  grenadeGroup.updateMatrixWorld(true);
   grenadeGroup.position.set(-0.22, 0.02, 0);
 
   // Le lancer se lit mieux avec une seule main : le bras gauche du rig de couteau
@@ -399,20 +461,6 @@ async function createGrenadeRig() {
   grenadeGroup.updateMatrixWorld(true);
 
   const armMesh = armsScene.getObjectByName("ArmModel") || null;
-  hideImportedSleeves(armMesh);
-  const sleeveMaterial = new THREE.MeshStandardMaterial({
-    color: 0x34442f,
-    roughness: 0.92,
-    metalness: 0,
-    flatShading: true
-  });
-  addBentSleeve(
-    grenadeGroup,
-    armsScene.getObjectByName("UpperArmR001"),
-    armsScene.getObjectByName("LowerArmR001"),
-    armsScene.getObjectByName("HandR001"),
-    sleeveMaterial
-  );
 
   if (handBone) {
     const handPosition = (gripBone || handBone).getWorldPosition(new THREE.Vector3());

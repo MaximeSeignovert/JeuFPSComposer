@@ -9,7 +9,7 @@ import {
 import { keyBindings } from "../input/keybinding-ui.js";
 import { hasGameLookInput } from "../input/touch-controls.js";
 
-const KNIFE_ATTACK_DURATION = 0.34;
+const KNIFE_ATTACK_DURATION = 0.46;
 const ADS_VIEW_POSES = {
   ak47: {
     // Place la pointe du guidon, et non l'axe du canon, sur le rayon central de la caméra.
@@ -312,7 +312,6 @@ export function createWeaponsController(ctx) {
         halfAngle: stats.swingHalfAngle,
         targetRadius: stats.swingTargetRadius
       });
-      ctx.controllers.effects.spawnKnifeSlash(muzzleOrigin, direction, true);
       ctx.controllers.socket?.sendShoot({
         origin: muzzleOrigin,
         weapon: state.weapon,
@@ -422,43 +421,22 @@ export function createWeaponsController(ctx) {
     }
 
     if (state.weapon === "knife") {
-      const p = knifeAttackTime > 0 ? 1 - knifeAttackTime / KNIFE_ATTACK_DURATION : 1;
-      const slashP = THREE.MathUtils.clamp(p / 0.72, 0, 1);
-      const recoverP = THREE.MathUtils.clamp((p - 0.72) / 0.28, 0, 1);
-      const slashEase = 1 - Math.pow(1 - slashP, 3);
-      const recoverEase = recoverP * recoverP * (3 - 2 * recoverP);
       const airY = state.onGround ? 0 : -0.03;
-      const start = { x: 0.43, y: -0.12, z: -0.49, rx: -0.18, ry: -0.22, rz: -0.46 };
-      const end = { x: 0.16, y: -0.34, z: -0.54, rx: 0.12, ry: 0.16, rz: 0.48 };
       const rest = {
-        x: 0.34 + s95 * bobX * bobIntensity,
-        y: -0.25 + c75 * bobY * bobIntensity + airY,
+        x: 0.27 + s95 * bobX * bobIntensity,
+        y: -0.2 + c75 * bobY * bobIntensity + airY,
         z: -0.49 + s15 * 0.004 * bobIntensity,
-        rx: -0.1 + c8 * bobRotX * bobIntensity,
-        ry: -0.16 + s67 * bobRotY * bobIntensity,
-        rz: -0.18 + s85 * bobRotZ * bobIntensity
+        rx: -0.06 + c8 * bobRotX * bobIntensity,
+        ry: -0.14 + s67 * bobRotY * bobIntensity,
+        rz: -0.14 + s85 * bobRotZ * bobIntensity
       };
-      const cut = {
-        x: THREE.MathUtils.lerp(start.x, end.x, slashEase),
-        y: THREE.MathUtils.lerp(start.y, end.y, slashEase) + airY,
-        z: THREE.MathUtils.lerp(start.z, end.z, slashEase),
-        rx: THREE.MathUtils.lerp(start.rx, end.rx, slashEase),
-        ry: THREE.MathUtils.lerp(start.ry, end.ry, slashEase),
-        rz: THREE.MathUtils.lerp(start.rz, end.rz, slashEase)
-      };
-      const active = knifeAttackTime > 0;
-      const pose = active
-        ? {
-            x: THREE.MathUtils.lerp(cut.x, rest.x, recoverEase),
-            y: THREE.MathUtils.lerp(cut.y, rest.y, recoverEase),
-            z: THREE.MathUtils.lerp(cut.z, rest.z, recoverEase),
-            rx: THREE.MathUtils.lerp(cut.rx, rest.rx, recoverEase),
-            ry: THREE.MathUtils.lerp(cut.ry, rest.ry, recoverEase),
-            rz: THREE.MathUtils.lerp(cut.rz, rest.rz, recoverEase)
-          }
-        : rest;
-      viewModel.position.set(pose.x, pose.y, pose.z);
-      viewModel.rotation.set(pose.rx, pose.ry, pose.rz);
+      viewModel.position.set(rest.x, rest.y, rest.z);
+      viewModel.rotation.set(rest.rx, rest.ry, rest.rz);
+      const knifeModel = viewModel.userData.weaponModels?.knife;
+      const attackProgress = knifeAttackTime > 0
+        ? THREE.MathUtils.clamp(1 - knifeAttackTime / KNIFE_ATTACK_DURATION, 0, 1)
+        : 1;
+      knifeModel?.userData.animateKnifeAttack?.(attackProgress);
       return;
     }
 

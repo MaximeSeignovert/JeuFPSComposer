@@ -166,9 +166,7 @@ export function createSocketClient(ctx) {
       if (!msg.id || msg.id === state.playerId) return;
       if (!msg.origin || !Array.isArray(msg.shots)) return;
       if (msg.weapon === "knife") {
-        const slashDirection = msg.shots.find((shot) => shot?.direction)?.direction;
         ctx.controllers.sound?.playShot(msg.weapon, msg.origin, true);
-        ctx.controllers.effects.spawnKnifeSlash(msg.origin, slashDirection, false);
         return;
       }
       ctx.controllers.sound?.playShot(msg.weapon, msg.origin, true);
@@ -176,7 +174,6 @@ export function createSocketClient(ctx) {
       msg.shots.forEach((shot) => {
         if (!shot?.direction) return;
         if (shot.melee) {
-          ctx.controllers.effects.spawnKnifeSlash(msg.origin, shot.direction, false);
           return;
         }
         const range = Number(shot.range) || 80;
