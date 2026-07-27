@@ -249,6 +249,13 @@ function curlFinger(armsScene, boneNames, angle) {
   });
 }
 
+function rotateFingerTips(armsScene, boneNames, angle) {
+  boneNames.forEach((name) => {
+    const bone = getArmBone(armsScene, name);
+    if (bone) bone.rotateZ(angle);
+  });
+}
+
 function lerpBoneOffset(from, to, amount) {
   return {
     depth: THREE.MathUtils.lerp(from.depth, to.depth, amount),
@@ -452,6 +459,12 @@ async function createGrenadeRig() {
   );
   curlFinger(armsScene, ["IndexBeginning.R.001", "Index.R.001", "IndexTip.R.001"], -0.66);
   curlFinger(armsScene, ["ThumbBeginning.R.001", "Thumb.R.001", "ThumbTip.R.001"], 0.52);
+  // Les phalanges terminales se replient vers la paume sur l'axe Z.
+  rotateFingerTips(
+    armsScene,
+    ["DoubleFingersTip.R.001", "IndexTip.R.001", "ThumbTip.R.001"],
+    -0.4
+  );
   grenadeGroup.updateMatrixWorld(true);
   grenadeGroup.position.set(-0.22, 0.02, 0);
 
