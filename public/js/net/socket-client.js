@@ -132,6 +132,9 @@ export function createSocketClient(ctx) {
           weapon: String(msg.killerWeapon || "")
         });
       }
+      if (msg.killerId === state.playerId && msg.id !== state.playerId) {
+        ctx.controllers.effects.triggerKillConfirmation();
+      }
       if (msg.id === state.playerId) {
         state.deathKillerId = msg.killerId || null;
         state.deathKillerName = String(msg.killerName || "Inconnu");

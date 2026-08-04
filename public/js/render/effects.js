@@ -2,17 +2,32 @@ import * as THREE from "https://unpkg.com/three@0.164.1/build/three.module.js";
 
 export function createEffectsController(ctx) {
   const { camera, scene, state } = ctx;
-  const { damageOverlay, hitmarker } = ctx.dom;
+  const { damageOverlay, hitmarker, killConfirmation } = ctx.dom;
 
   function triggerHitmarker() {
     if (!hitmarker) return;
+    hitmarker.classList.remove("show");
+    void hitmarker.offsetWidth;
     hitmarker.classList.remove("hidden");
     hitmarker.classList.add("show");
     if (ctx.hitmarkerTimer) clearTimeout(ctx.hitmarkerTimer);
     ctx.hitmarkerTimer = setTimeout(() => {
       hitmarker.classList.remove("show");
       hitmarker.classList.add("hidden");
-    }, 110);
+    }, 140);
+  }
+
+  function triggerKillConfirmation() {
+    if (!killConfirmation) return;
+    killConfirmation.classList.remove("show");
+    void killConfirmation.offsetWidth;
+    killConfirmation.classList.remove("hidden");
+    killConfirmation.classList.add("show");
+    if (ctx.killConfirmationTimer) clearTimeout(ctx.killConfirmationTimer);
+    ctx.killConfirmationTimer = setTimeout(() => {
+      killConfirmation.classList.remove("show");
+      killConfirmation.classList.add("hidden");
+    }, 620);
   }
 
   function triggerDamageOverlay(damageAmount = 0) {
@@ -270,6 +285,7 @@ export function createEffectsController(ctx) {
     traceMeleeSweep,
     triggerDamageOverlay,
     triggerHitmarker,
+    triggerKillConfirmation,
     update
   };
 }

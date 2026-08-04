@@ -29,6 +29,7 @@ export function createGameContext({ dom, state, sceneSetup, viewModel, mapConfig
     smoothedMoveVelocity: new THREE.Vector3(),
     lastNetworkSend: 0,
     hitmarkerTimer: null,
+    killConfirmationTimer: null,
     damageOverlayTimer: null,
     soundListenerPosition: new THREE.Vector3(),
     soundListenerForward: new THREE.Vector3()

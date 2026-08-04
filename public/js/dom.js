@@ -16,6 +16,7 @@ export const crosshair = document.getElementById("crosshair");
 export const weaponShotLoader = document.getElementById("weaponShotLoader");
 export const damageOverlay = document.getElementById("damageOverlay");
 export const hitmarker = document.getElementById("hitmarker");
+export const killConfirmation = document.getElementById("killConfirmation");
 export const sniperScope = document.getElementById("sniperScope");
 export const playerList = document.getElementById("playerList");
 export const hudGrenade = document.getElementById("hudGrenade");
