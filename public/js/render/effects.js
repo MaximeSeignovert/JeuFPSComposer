@@ -75,6 +75,7 @@ export function createEffectsController(ctx) {
 
     const targets = [...ctx.worldColliders];
     ctx.remoteMeshes.forEach((remotePlayer) => {
+      if (remotePlayer.alive === false || !remotePlayer.root?.visible) return;
       const hitbox = remotePlayer.root?.userData?.hitbox;
       if (hitbox) targets.push(hitbox);
     });

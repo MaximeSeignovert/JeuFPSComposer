@@ -113,17 +113,29 @@ export function createPlayerMesh(isLocal = false) {
 
   const mixer = new THREE.AnimationMixer(model);
   const idleClip = soldierAsset.animations?.[0];
+  let idleAction = null;
   if (idleClip) {
-    const action = mixer.clipAction(idleClip);
-    action.setLoop(THREE.LoopRepeat, Infinity);
-    action.play();
+    idleAction = mixer.clipAction(idleClip);
+    idleAction.setLoop(THREE.LoopRepeat, Infinity);
+    idleAction.play();
   }
 
   root.userData.hitbox = hitbox;
   root.userData.nameTag = nameTag;
+  root.userData.model = model;
+  root.userData.modelPivot = modelPivot;
+  root.userData.bones = {};
+  model.traverse((object) => {
+    if (object.isBone && object.name) root.userData.bones[object.name] = object;
+    if (!object.isSkinnedMesh || !object.skeleton?.bones) return;
+    object.skeleton.bones.forEach((bone) => {
+      if (bone?.name) root.userData.bones[bone.name] = bone;
+    });
+  });
   root.userData.materials = { teamMaterials };
   root.userData.groundOffset = 0;
   root.userData.mixer = mixer;
+  root.userData.idleAction = idleAction;
 
   return root;
 }
@@ -233,7 +245,54 @@ export function applyRemoteTeamStyle(root, team, playerId) {
   });
 }
 
-export function setRemoteAliveVisual(root, alive) {
+function forEachModelMaterial(root, callback) {
+  root?.userData?.model?.traverse((object) => {
+    if (!object.isMesh || !object.material) return;
+    const materials = Array.isArray(object.material) ? object.material : [object.material];
+    materials.forEach((material) => material && callback(material));
+  });
+}
+
+export function setRemoteDeathOpacity(root, opacity) {
+  const nextOpacity = THREE.MathUtils.clamp(Number(opacity) || 0, 0, 1);
+  forEachModelMaterial(root, (material) => {
+    let materialStateChanged = false;
+    if (!material.userData.remoteDeathOriginal) {
+      material.userData.remoteDeathOriginal = {
+        depthWrite: material.depthWrite,
+        opacity: material.opacity,
+        transparent: material.transparent
+      };
+      materialStateChanged = true;
+    }
+    material.transparent = true;
+    material.depthWrite = false;
+    material.opacity = nextOpacity;
+    if (materialStateChanged) material.needsUpdate = true;
+  });
+}
+
+export function resetRemoteDeathVisual(root) {
   if (!root) return;
-  root.visible = alive !== false;
+
+  root.visible = true;
+  root.userData.modelPivot?.rotation.set(0, Math.PI, 0);
+  if (root.userData.nameTag) root.userData.nameTag.visible = true;
+  if (root.userData.hitbox) root.userData.hitbox.visible = true;
+
+  forEachModelMaterial(root, (material) => {
+    const original = material.userData.remoteDeathOriginal;
+    if (!original) return;
+    material.depthWrite = original.depthWrite;
+    material.opacity = original.opacity;
+    material.transparent = original.transparent;
+    material.needsUpdate = true;
+    delete material.userData.remoteDeathOriginal;
+  });
+
+  if (root.userData.idleAction) {
+    root.userData.idleAction.paused = false;
+    root.userData.idleAction.reset().play();
+  }
+  root.userData.mixer?.update(0);
 }

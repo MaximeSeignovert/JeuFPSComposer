@@ -4,10 +4,37 @@ import {
   applyRemoteTeamStyle,
   colorFromPlayerId,
   createPlayerMesh,
+  resetRemoteDeathVisual,
   resolvePlayerAppearanceAssets,
-  setRemoteAliveVisual,
+  setRemoteDeathOpacity,
   updateNameTagSprite
 } from "../players/appearance.js";
+
+const REMOTE_DEATH_FALL_MS = 450;
+const REMOTE_DEATH_FADE_MS = 2000;
+
+const RAGDOLL_BONE_OFFSETS = [
+  ["mixamorig:Hips", 0.16, 0.06, 0.12, 0],
+  ["mixamorig:Spine", 0.22, 0.04, 0.16, 24],
+  ["mixamorig:Spine1", 0.16, -0.06, 0.12, 42],
+  ["mixamorig:Spine2", 0.1, 0.04, 0.08, 58],
+  ["mixamorig:Neck", -0.16, 0.08, -0.16, 76],
+  ["mixamorig:Head", 0.2, -0.12, 0.1, 92],
+  ["mixamorig:LeftShoulder", 0.16, 0.18, -0.62, 34],
+  ["mixamorig:LeftArm", 0.96, 0.12, -0.72, 52],
+  ["mixamorig:LeftForeArm", 1.08, 0.1, -0.72, 78],
+  ["mixamorig:LeftHand", 0.3, 0.08, -0.28, 102],
+  ["mixamorig:RightShoulder", 0.12, -0.14, 0.5, 38],
+  ["mixamorig:RightArm", 1.1, -0.1, 0.34, 58],
+  ["mixamorig:RightForeArm", 0.78, 0.12, 0.68, 86],
+  ["mixamorig:RightHand", 0.16, -0.08, 0.22, 108],
+  ["mixamorig:LeftUpLeg", -0.14, 0.06, 0.14, 34],
+  ["mixamorig:LeftLeg", 0.54, 0.04, -0.1, 78],
+  ["mixamorig:LeftFoot", -0.24, 0, 0.16, 108],
+  ["mixamorig:RightUpLeg", 0.22, -0.05, -0.12, 38],
+  ["mixamorig:RightLeg", -0.44, -0.1, 0.18, 84],
+  ["mixamorig:RightFoot", -0.18, 0, -0.12, 114]
+];
 
 function lerpAngle(from, to, t) {
   const delta = Math.atan2(Math.sin(to - from), Math.cos(to - from));
@@ -38,6 +65,98 @@ export async function createRemotePlayersController(ctx) {
     return remotePlayer;
   }
 
+  function getDeathFallRotation(id) {
+    let hash = 0;
+    const key = String(id || "remote-player");
+    for (let index = 0; index < key.length; index += 1) {
+      hash = (hash * 31 + key.charCodeAt(index)) >>> 0;
+    }
+    return hash % 2 === 0 ? Math.PI * 0.5 : -Math.PI * 0.5;
+  }
+
+  function createRagdollPose(root, id) {
+    const bones = root.userData.bones || {};
+    let hash = 0;
+    const key = String(id || "remote-player");
+    for (let index = 0; index < key.length; index += 1) {
+      hash = (hash * 31 + key.charCodeAt(index)) >>> 0;
+    }
+    const variation = (hash % 5 - 2) * 0.035;
+    const side = hash % 2 === 0 ? 1 : -1;
+
+    return RAGDOLL_BONE_OFFSETS.map(([name, x, y, z, delayMs]) => {
+      const bone = bones[name] || root.userData.model?.getObjectByName(name);
+      if (!bone) return null;
+
+      const startQuaternion = bone.quaternion.clone();
+      const offset = new THREE.Euler(
+        x + variation * 0.4,
+        y + variation + side * (name.includes("Right") ? -0.025 : 0.025),
+        z + variation * 0.5
+      );
+      const targetQuaternion = startQuaternion
+        .clone()
+        .multiply(new THREE.Quaternion().setFromEuler(offset));
+      return { bone, delayMs, startQuaternion, targetQuaternion };
+    }).filter(Boolean);
+  }
+
+  function startDeath(remotePlayer) {
+    if (!remotePlayer?.root || remotePlayer.deathAnimation) return;
+
+    const { root } = remotePlayer;
+    const modelPivot = root.userData.modelPivot;
+    const ragdollBones = createRagdollPose(root, remotePlayer.id);
+    if (modelPivot) modelPivot.rotation.set(0, Math.PI, 0);
+    if (root.userData.nameTag) root.userData.nameTag.visible = false;
+    if (root.userData.hitbox) root.userData.hitbox.visible = false;
+    if (root.userData.idleAction) root.userData.idleAction.paused = true;
+    ragdollBones.forEach(({ bone, startQuaternion }) => bone.quaternion.copy(startQuaternion));
+    root.visible = true;
+    setRemoteDeathOpacity(root, 1);
+
+    remotePlayer.deathAnimation = {
+      elapsedMs: 0,
+      fallRotation: getDeathFallRotation(remotePlayer.id),
+      ragdollBones
+    };
+  }
+
+  function revive(remotePlayer) {
+    if (!remotePlayer?.root) return;
+    remotePlayer.deathAnimation = null;
+    resetRemoteDeathVisual(remotePlayer.root);
+  }
+
+  function updateDeathAnimation(remotePlayer, delta) {
+    const animation = remotePlayer.deathAnimation;
+    if (!animation) return;
+
+    animation.elapsedMs += Math.max(0, delta) * 1000;
+    const fallProgress = THREE.MathUtils.clamp(animation.elapsedMs / REMOTE_DEATH_FALL_MS, 0, 1);
+    const fallEased = 1 - Math.pow(1 - fallProgress, 3);
+    const modelPivot = remotePlayer.root.userData.modelPivot;
+    if (modelPivot) modelPivot.rotation.x = animation.fallRotation * fallEased;
+
+    animation.ragdollBones.forEach(({ bone, delayMs, startQuaternion, targetQuaternion }) => {
+      const boneProgress = THREE.MathUtils.clamp(
+        (animation.elapsedMs - delayMs) / Math.max(180, REMOTE_DEATH_FALL_MS - delayMs * 0.45),
+        0,
+        1
+      );
+      const boneEased = boneProgress * boneProgress * (3 - 2 * boneProgress);
+      bone.quaternion.slerpQuaternions(startQuaternion, targetQuaternion, boneEased);
+    });
+
+    const fadeProgress = THREE.MathUtils.clamp(
+      (animation.elapsedMs - REMOTE_DEATH_FALL_MS) / REMOTE_DEATH_FADE_MS,
+      0,
+      1
+    );
+    setRemoteDeathOpacity(remotePlayer.root, 1 - fadeProgress);
+    if (fadeProgress >= 1) remotePlayer.root.visible = false;
+  }
+
   function applySnapshot(remotePlayer, payload, snap = false) {
     if (!payload?.position) return;
     const groundOffset = Number(remotePlayer.root.userData.groundOffset) || 0;
@@ -58,8 +177,10 @@ export async function createRemotePlayersController(ctx) {
     const shouldSnap = remotePlayer.alive === false && msg.alive !== false;
     remotePlayer.team = msg.team || remotePlayer.team || null;
     applySnapshot(remotePlayer, msg, shouldSnap);
-    setRemoteAliveVisual(remotePlayer.root, msg.alive !== false);
-    remotePlayer.alive = msg.alive !== false;
+    const isAlive = msg.alive !== false;
+    if (isAlive && remotePlayer.alive === false) revive(remotePlayer);
+    if (!isAlive && remotePlayer.alive !== false) startDeath(remotePlayer);
+    remotePlayer.alive = isAlive;
     if (msg.name || msg.team) {
       const playerColor = colorFromPlayerId(msg.id);
       updateNameTagSprite(remotePlayer.root.userData.nameTag, msg.name || "Player", playerColor);
@@ -89,24 +210,37 @@ export async function createRemotePlayersController(ctx) {
       const playerColor = colorFromPlayerId(p.id);
       updateNameTagSprite(remotePlayer.root.userData.nameTag, p.name || "Player", playerColor);
       applyRemoteTeamStyle(remotePlayer.root, p.team, p.id);
-      setRemoteAliveVisual(remotePlayer.root, p.alive !== false);
-      remotePlayer.alive = p.alive !== false;
+      const isAlive = p.alive !== false;
+      if (isAlive && remotePlayer.alive === false) revive(remotePlayer);
+      if (!isAlive && remotePlayer.alive !== false) startDeath(remotePlayer);
+      remotePlayer.alive = isAlive;
     });
   }
 
   function setAlive(id, alive) {
-    const remotePlayer = ctx.remoteMeshes.get(id);
-    if (remotePlayer) setRemoteAliveVisual(remotePlayer.root, alive);
+    const remotePlayer = ensure(id);
+    if (alive) {
+      if (remotePlayer.alive === false) revive(remotePlayer);
+    } else if (remotePlayer.alive !== false) {
+      startDeath(remotePlayer);
+    }
+    remotePlayer.alive = alive !== false;
   }
 
   function update(delta, time) {
     const t = THREE.MathUtils.clamp(delta * REMOTE_INTERP_SPEED, 0, 1);
     ctx.remoteMeshes.forEach((remotePlayer) => {
-      if (!remotePlayer?.targetPosition) return;
+      if (!remotePlayer) return;
 
-      if (remotePlayer.root.userData.mixer) {
+      if (remotePlayer.deathAnimation) {
+        updateDeathAnimation(remotePlayer, delta);
+      }
+
+      if (!remotePlayer.targetPosition) return;
+
+      if (!remotePlayer.deathAnimation && remotePlayer.root.userData.mixer) {
         remotePlayer.root.userData.mixer.update(delta);
-      } else if (remotePlayer.root.userData.parts && time !== undefined) {
+      } else if (!remotePlayer.deathAnimation && remotePlayer.root.userData.parts && time !== undefined) {
         const parts = remotePlayer.root.userData.parts;
         const baseTorsoY = Number(parts.baseTorsoY) || 1.43;
         const dist = remotePlayer.root.position.distanceTo(remotePlayer.targetPosition);
@@ -130,8 +264,10 @@ export async function createRemotePlayersController(ctx) {
         }
       }
 
-      remotePlayer.root.position.lerp(remotePlayer.targetPosition, t);
-      remotePlayer.root.rotation.y = lerpAngle(remotePlayer.root.rotation.y, remotePlayer.targetRotationY || 0, t);
+      if (!remotePlayer.deathAnimation) {
+        remotePlayer.root.position.lerp(remotePlayer.targetPosition, t);
+        remotePlayer.root.rotation.y = lerpAngle(remotePlayer.root.rotation.y, remotePlayer.targetRotationY || 0, t);
+      }
     });
   }
 
