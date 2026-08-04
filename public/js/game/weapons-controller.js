@@ -10,6 +10,9 @@ import { keyBindings } from "../input/keybinding-ui.js";
 import { hasGameLookInput } from "../input/touch-controls.js";
 
 const KNIFE_ATTACK_DURATION = 0.46;
+// Garder le changement assez vif pour ne pas casser le rythme d'un duel.
+const WEAPON_SWITCH_DURATION = 0.24;
+const WEAPON_SWITCH_SWAP_AT = 0.46;
 const ADS_VIEW_POSES = {
   ak47: {
     // Place la pointe du guidon, et non l'axe du canon, sur le rayon central de la caméra.
@@ -30,6 +33,7 @@ export function createWeaponsController(ctx) {
   const { touchAimBtn, touchInput } = ctx.dom;
   let aimViewBlend = 0;
   let knifeAttackTime = 0;
+  let weaponSwitch = null;
 
   function getWeaponStats(weapon = state.weapon) {
     return WEAPON_STATS[weapon] || WEAPON_STATS.ak47;
@@ -158,7 +162,15 @@ export function createWeaponsController(ctx) {
     ensureWeaponAmmo(weapon);
     ctx.controllers.hud?.updateAmmo();
     touchAimBtn?.classList.remove("is-active");
-    setActiveWeaponModel(weapon);
+    const displayedWeapon = viewModel.userData.activeWeapon || state.weapon;
+    const shouldAnimateSwitch = weaponChanged && state.joined && state.isAlive && displayedWeapon !== weapon;
+    if (shouldAnimateSwitch) {
+      // L'état de jeu change tout de suite, mais le modèle reste visible jusqu'au point bas.
+      weaponSwitch = { from: displayedWeapon, to: weapon, elapsed: 0, swapped: false };
+    } else {
+      weaponSwitch = null;
+      setActiveWeaponModel(weapon);
+    }
     ctx.controllers.hud?.syncWeaponChoice();
     if (weaponChanged && weapon !== "grenade") ctx.controllers.socket?.sendWeaponSelect(weapon);
     return true;
@@ -222,7 +234,7 @@ export function createWeaponsController(ctx) {
   }
 
   function beginPrimaryFire() {
-    if (!state.joined || state.pauseOpen || !state.isAlive || !hasGameLookInput()) return false;
+    if (weaponSwitch || !state.joined || state.pauseOpen || !state.isAlive || !hasGameLookInput()) return false;
     const stats = getWeaponStats();
     if (stats.throwable) {
       if (!ctx.controllers.grenades?.beginThrowCharge()) return false;
@@ -355,6 +367,16 @@ export function createWeaponsController(ctx) {
     state.viewRecoilRotX *= decay;
     state.viewRecoilRotZ *= decay;
 
+    if (weaponSwitch) {
+      weaponSwitch.elapsed += delta;
+      const progress = THREE.MathUtils.clamp(weaponSwitch.elapsed / WEAPON_SWITCH_DURATION, 0, 1);
+      if (!weaponSwitch.swapped && progress >= WEAPON_SWITCH_SWAP_AT) {
+        weaponSwitch.swapped = true;
+        setActiveWeaponModel(weaponSwitch.to);
+      }
+      if (progress >= 1) weaponSwitch = null;
+    }
+
     const wantsAimView =
       state.joined &&
       state.isAlive &&
@@ -392,19 +414,23 @@ export function createWeaponsController(ctx) {
     const c8 = Math.cos(t * 8 * sprintFactor);
     const s67 = Math.sin(t * 6.7 * sprintFactor);
 
-    const activeArmMesh = viewModel.userData.armMeshes?.[state.weapon];
+    // Avant l'échange, les poses doivent rester celles de l'arme qui descend.
+    const presentedWeapon = weaponSwitch
+      ? (weaponSwitch.swapped ? weaponSwitch.to : weaponSwitch.from)
+      : state.weapon;
+    const activeArmMesh = viewModel.userData.armMeshes?.[presentedWeapon];
     if (activeArmMesh) {
       activeArmMesh.visible = aimViewBlend < 0.8;
     }
-    const activeWeaponModel = viewModel.userData.weaponModels?.[state.weapon];
+    const activeWeaponModel = viewModel.userData.weaponModels?.[presentedWeapon];
     const activeAimPivot = activeWeaponModel?.userData.aimPivot;
-    const activeModelRotation = ADS_VIEW_POSES[state.weapon]?.modelRotation;
+    const activeModelRotation = ADS_VIEW_POSES[presentedWeapon]?.modelRotation;
     if (activeAimPivot) {
       activeAimPivot.rotation.x = (activeModelRotation?.x || 0) * aimViewBlend;
       activeAimPivot.rotation.y = (activeModelRotation?.y || 0) * aimViewBlend;
     }
 
-    if (state.weapon === "grenade") {
+    if (presentedWeapon === "grenade") {
       const charge = ctx.controllers.grenades?.getThrowChargeProgress() || 0;
       const airY = state.onGround ? 0 : -0.03;
       viewModel.position.set(
@@ -417,10 +443,11 @@ export function createWeaponsController(ctx) {
         -0.12 + s67 * bobRotY * bobIntensity,
         -0.24 + s85 * bobRotZ * bobIntensity - charge * 0.16
       );
+      applyWeaponSwitchOffset();
       return;
     }
 
-    if (state.weapon === "knife") {
+    if (presentedWeapon === "knife") {
       const airY = state.onGround ? 0 : -0.03;
       const rest = {
         x: 0.27 + s95 * bobX * bobIntensity,
@@ -437,13 +464,14 @@ export function createWeaponsController(ctx) {
         ? THREE.MathUtils.clamp(1 - knifeAttackTime / KNIFE_ATTACK_DURATION, 0, 1)
         : 1;
       knifeModel?.userData.animateKnifeAttack?.(attackProgress);
+      applyWeaponSwitchOffset();
       return;
     }
 
-    const isShotgun = state.weapon === "shotgun";
-    const isSniper = state.weapon === "sniper";
+    const isShotgun = presentedWeapon === "shotgun";
+    const isSniper = presentedWeapon === "sniper";
     const reloadProgress = getReloadProgress();
-    const aimPose = ADS_VIEW_POSES[state.weapon] || ADS_VIEW_POSES.shotgun;
+    const aimPose = ADS_VIEW_POSES[presentedWeapon] || ADS_VIEW_POSES.shotgun;
     const restY = isSniper ? -0.22 : -0.31;
     const airY = state.onGround ? 0 : -0.03;
 
@@ -492,6 +520,23 @@ export function createWeaponsController(ctx) {
       viewModel.rotation.y += side * 0.3 * hold;
       viewModel.rotation.z += side * (0.34 * lift + 0.08 * click);
     }
+    applyWeaponSwitchOffset();
+  }
+
+  function applyWeaponSwitchOffset() {
+    if (!weaponSwitch) return;
+    const progress = THREE.MathUtils.clamp(weaponSwitch.elapsed / WEAPON_SWITCH_DURATION, 0, 1);
+    const lower = progress < WEAPON_SWITCH_SWAP_AT
+      ? THREE.MathUtils.smoothstep(progress / WEAPON_SWITCH_SWAP_AT, 0, 1)
+      : 1 - THREE.MathUtils.smoothstep(
+        (progress - WEAPON_SWITCH_SWAP_AT) / (1 - WEAPON_SWITCH_SWAP_AT),
+        0,
+        1
+      );
+    viewModel.position.y -= 0.34 * lower;
+    viewModel.position.z += 0.1 * lower;
+    viewModel.rotation.x += 0.3 * lower;
+    viewModel.rotation.z -= 0.08 * lower;
   }
 
   function update(delta) {
