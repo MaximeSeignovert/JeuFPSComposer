@@ -31,10 +31,13 @@ export function createHudController(ctx) {
     hudWeaponSlots,
     killFeed,
     menu,
+    menuBackdrop,
     pauseMenuOverlay,
     playerList,
+    playBtn,
     respawnNotice,
-    roomsList,
+    serverStatusCount,
+    serverStatusText,
     sniperScope,
     touchAimBtn,
     touchGrenadeBtn,
@@ -322,28 +325,29 @@ export function createHudController(ctx) {
   }
 
   function renderRooms(rooms) {
-    roomsList.innerHTML = "";
-    rooms.forEach((room) => {
-      const item = document.createElement("article");
-      item.className = `room-item ${room.count >= room.max ? "full" : ""}`;
-      item.innerHTML = `
-        <div class="room-item__meta">
-          <strong>${room.id}</strong>
-          <span>${room.count}/${room.max} joueurs</span>
-        </div>
-      `;
-      const btn = document.createElement("button");
-      btn.className = "room-join-button";
-      btn.textContent = room.count >= room.max ? "Pleine" : "Rejoindre";
-      btn.disabled = room.count >= room.max;
-      btn.addEventListener("click", () => ctx.controllers.socket?.joinRoom(room.id));
-      item.appendChild(btn);
-      roomsList.appendChild(item);
-    });
+    const room = Array.isArray(rooms) ? rooms[0] : null;
+    if (!serverStatusText || !serverStatusCount) return;
+    if (!room) {
+      serverStatusText.textContent = "Arène indisponible";
+      serverStatusCount.textContent = "— / 10";
+      return;
+    }
+    const isFull = Number(room.count) >= Number(room.max);
+    serverStatusText.textContent = isFull ? "Arène complète" : "Serveur en ligne";
+    serverStatusCount.textContent = `${room.count} / ${room.max}`;
+    playBtn?.toggleAttribute("disabled", isFull);
+  }
+
+  function setPlayLoading(loading) {
+    if (!playBtn) return;
+    playBtn.disabled = Boolean(loading);
+    playBtn.classList.toggle("is-loading", Boolean(loading));
+    playBtn.querySelector(".play-button__label").textContent = loading ? "Connexion…" : "Jouer";
   }
 
   function enterGame() {
     menu.classList.add("hidden");
+    menuBackdrop?.classList.add("hidden");
     hud.classList.remove("hidden");
     crosshair.classList.remove("hidden");
     playerList.classList.remove("hidden");
@@ -378,6 +382,8 @@ export function createHudController(ctx) {
   }
 
   function showRoomError(message) {
+    setPlayLoading(false);
+    if (serverStatusText) serverStatusText.textContent = message || "Action impossible";
     respawnNotice.textContent = message || "Action impossible";
     respawnNotice.classList.remove("hidden");
     setTimeout(() => {
@@ -442,6 +448,7 @@ export function createHudController(ctx) {
     addKillFeedEntry,
     enterGame,
     renderRooms,
+    setPlayLoading,
     setLocalAlive,
     setPauseMenu,
     showRoomError,

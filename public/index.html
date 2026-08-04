@@ -55,18 +55,70 @@
   </head>
   <body>
     <main id="app">
-      <section id="menu" class="panel launch-panel">
-        <div class="launch-kicker">Connexion arena</div>
-        <h1>FPS Arena 5v5</h1>
-        <p class="subtitle">Choisis ton pseudo et entre dans une room.</p>
+      <section id="menuBackdrop" class="menu-backdrop" aria-hidden="true">
+        <div class="menu-backdrop__grid"></div>
+        <div class="menu-backdrop__scanline"></div>
+        <div class="menu-backdrop__glow menu-backdrop__glow--cyan"></div>
+        <div class="menu-backdrop__glow menu-backdrop__glow--amber"></div>
+        <div class="menu-backdrop__world" aria-hidden="true">
+          <div class="menu-backdrop__world-label">SECTOR 01 / LIVE FIRE</div>
+          <div class="menu-backdrop__world-number">01</div>
+          <div class="menu-backdrop__world-line menu-backdrop__world-line--one"></div>
+          <div class="menu-backdrop__world-line menu-backdrop__world-line--two"></div>
+          <div class="menu-backdrop__world-block menu-backdrop__world-block--one"></div>
+          <div class="menu-backdrop__world-block menu-backdrop__world-block--two"></div>
+          <div class="menu-backdrop__world-block menu-backdrop__world-block--three"></div>
+          <span class="menu-backdrop__world-point menu-backdrop__world-point--one"></span>
+          <span class="menu-backdrop__world-point menu-backdrop__world-point--two"></span>
+          <span class="menu-backdrop__world-point menu-backdrop__world-point--three"></span>
+        </div>
+        <div class="menu-backdrop__edge-label menu-backdrop__edge-label--top">COMBAT SIMULATION // 001</div>
+        <div class="menu-backdrop__edge-label menu-backdrop__edge-label--bottom">NO SIGNAL / NO EXIT</div>
+      </section>
 
-        <div class="field-row launch-field">
-          <label for="nameInput">Pseudo</label>
-          <input id="nameInput" type="text" maxlength="20" value="Player" />
+      <section id="menu" class="panel launch-panel">
+        <div class="launch-panel__topline">
+          <span class="launch-panel__kicker">TACTICAL ARENA</span>
+          <span class="launch-panel__index">01 — 05</span>
         </div>
 
-        <h2>Rooms disponibles</h2>
-        <div id="roomsList" class="rooms-list"></div>
+        <div class="launch-panel__brand">
+          <span class="launch-mark" aria-hidden="true">
+            <i></i><i></i><i></i>
+          </span>
+          <span class="launch-panel__brand-name">FPS / COMPOSER</span>
+        </div>
+
+        <h1><span>FPS</span><em>ARENA</em></h1>
+        <p class="subtitle launch-panel__subtitle">Une seule arène. Aucun détour.</p>
+
+        <div class="launch-panel__divider" aria-hidden="true">
+          <span></span><span></span><span></span>
+        </div>
+
+        <div class="field-row launch-field">
+          <label for="nameInput"><span>Identifiant opérateur</span><small>Nom visible en partie</small></label>
+          <input id="nameInput" type="text" maxlength="20" value="Player" autocomplete="nickname" />
+        </div>
+
+        <button id="playBtn" class="play-button" type="button">
+          <span class="play-button__number">01</span>
+          <span class="play-button__label">Jouer</span>
+          <span class="play-button__arrow" aria-hidden="true">↗</span>
+        </button>
+
+        <div class="menu-status" role="status" aria-live="polite">
+          <span class="menu-status__signal" aria-hidden="true"></span>
+          <span id="serverStatusText">Synchronisation du serveur</span>
+          <span id="serverStatusCount" class="menu-status__count">— / 10</span>
+        </div>
+
+        <div class="launch-panel__footer">
+          <span>Entrée pour lancer</span>
+          <kbd>↵</kbd>
+          <span class="launch-panel__footer-spacer"></span>
+          <span>Build 0.1 / POC</span>
+        </div>
       </section>
 
       <section id="hud" class="hud hidden">

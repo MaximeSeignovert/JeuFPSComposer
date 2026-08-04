@@ -14,6 +14,7 @@ import { createSocketClient } from "./js/net/socket-client.js";
 import { createSoundController } from "./js/audio/sound-controller.js";
 import { initPhysics } from "./js/physics/rapier-physics.js";
 import { createEffectsController } from "./js/render/effects.js";
+import { createMenuCameraController } from "./js/render/menu-camera.js";
 import { createWorldRenderer } from "./js/render/world-renderer.js";
 import { createHudController } from "./js/ui/hud.js";
 import { createViewModel } from "./js/weapons.js";
@@ -36,10 +37,12 @@ const ctx = createGameContext({
 function resizeRendererToViewport() {
   ctx.camera.aspect = window.innerWidth / window.innerHeight;
   ctx.camera.updateProjectionMatrix();
+  ctx.controllers.menuCamera?.resize();
   ctx.renderer.setSize(window.innerWidth, window.innerHeight);
 }
 
 ctx.controllers.world = createWorldRenderer(ctx);
+ctx.controllers.menuCamera = createMenuCameraController();
 ctx.controllers.effects = createEffectsController(ctx);
 ctx.controllers.sound = createSoundController(ctx);
 ctx.controllers.remotePlayers = await createRemotePlayersController(ctx);
@@ -51,6 +54,13 @@ ctx.controllers.socket = createSocketClient(ctx);
 
 ctx.controllers.world.build();
 ctx.controllers.weapons.setActiveWeaponModel(state.weapon);
+
+dom.playBtn.addEventListener("click", () => ctx.controllers.socket?.joinRoom());
+dom.nameInput.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter") return;
+  event.preventDefault();
+  ctx.controllers.socket?.joinRoom();
+});
 
 dom.weaponChoice.addEventListener("click", (event) => {
   const target = event.target.closest("button[data-weapon]");
@@ -121,7 +131,9 @@ function animate() {
   ctx.controllers.grenades.update(delta, time);
   ctx.controllers.world.update(time, delta);
   ctx.controllers.sound.updateListener();
-  ctx.renderer.render(ctx.scene, ctx.camera);
+  ctx.controllers.menuCamera.update(time);
+  ctx.viewModel.visible = state.joined;
+  ctx.renderer.render(ctx.scene, state.joined ? ctx.camera : ctx.controllers.menuCamera.camera);
 }
 
 ctx.controllers.socket.connect();

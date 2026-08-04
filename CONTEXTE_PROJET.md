@@ -8,7 +8,7 @@ Ce fichier sert de briefing rapide pour reprendre le projet sans historique de c
 
 Fonctionnalites principales actuelles :
 
-- menu de connexion avec pseudo et liste des rooms ;
+- menu d'accueil avec pseudo et bouton unique pour rejoindre l'arène ;
 - rendu 3D avec Three.js ;
 - serveur Express + Colyseus pour synchroniser les joueurs ;
 - physique locale avec Rapier 3D ;
@@ -119,7 +119,7 @@ Flux simplifie :
 
 Constantes principales :
 
-- room logique unique `fps_room`
+- room logique interne unique `fps_room` (non exposée dans le menu)
 - `ROOM_SIZE = 10`
 - `MAX_HEALTH = 100`
 - `RESPAWN_DELAY_MS = 3200`

@@ -1,7 +1,7 @@
 # FPS 5v5 Three.js
 
 FPS 1ere personne avec:
-- lobby de rooms (affichage `x/10`)
+- menu d'accueil unique avec pseudo et bouton `Jouer`
 - matchmaking 5v5 (2 equipes de 5)
 - trois classes d'arme: `Fusil a pompe`, `Sniper`, `AK47`
 - deux slots permanents par classe: arme principale et `Couteau`

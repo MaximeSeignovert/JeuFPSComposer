@@ -196,6 +196,7 @@ export function createSocketClient(ctx) {
 
   async function joinRoom() {
     if (!client) return;
+    ctx.controllers.hud.setPlayLoading(true);
     savePlayerName(nameInput.value);
     const name = sanitizePlayerName(nameInput.value);
     try {

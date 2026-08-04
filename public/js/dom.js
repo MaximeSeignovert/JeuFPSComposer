@@ -1,6 +1,9 @@
 export const app = document.getElementById("app");
 export const menu = document.getElementById("menu");
-export const roomsList = document.getElementById("roomsList");
+export const menuBackdrop = document.getElementById("menuBackdrop");
+export const playBtn = document.getElementById("playBtn");
+export const serverStatusText = document.getElementById("serverStatusText");
+export const serverStatusCount = document.getElementById("serverStatusCount");
 export const nameInput = document.getElementById("nameInput");
 export const weaponChoice = document.getElementById("weaponChoice");
 export const pauseMenuOverlay = document.getElementById("pauseMenuOverlay");
