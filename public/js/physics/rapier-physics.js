@@ -17,6 +17,11 @@ function quatFromXRotation(angle) {
   return { x: Math.sin(half), y: 0, z: 0, w: Math.cos(half) };
 }
 
+function quatFromYRotation(angle) {
+  const half = angle * 0.5;
+  return { x: 0, y: Math.sin(half), z: 0, w: Math.cos(half) };
+}
+
 function vectorFrom(input, fallback = { x: 0, y: 0, z: 0 }) {
   return {
     x: Number(input?.x) || fallback.x,
@@ -44,6 +49,82 @@ function addWorldColliders(world, mapConfig, mapHalfSize) {
     hz: 100,
     friction: 0.95
   });
+
+  if (mapConfig.kind === "desert") {
+    for (const structure of mapConfig.structures || []) {
+      if (structure.collider === false) continue;
+      addFixedCuboid(world, {
+        x: structure.x,
+        y: structure.y,
+        z: structure.z,
+        hx: structure.width * 0.5,
+        hy: structure.height * 0.5,
+        hz: structure.depth * 0.5,
+        rotation: structure.rotationY ? quatFromYRotation(structure.rotationY) : undefined,
+        friction: structure.material === "woodRoof" ? 0.9 : 0.86
+      });
+    }
+
+    for (const crateStack of mapConfig.crates || []) {
+      const stack = Math.max(1, Number(crateStack.stack) || 1);
+      for (let level = 0; level < stack; level += 1) {
+        const size = level === 0 ? 1.65 : 1.4;
+        addFixedCuboid(world, {
+          x: crateStack.x + level * 0.22,
+          y: size * 0.5 + level * 1.5,
+          z: crateStack.z - level * 0.18,
+          hx: size * 0.5,
+          hy: size * 0.5,
+          hz: size * 0.5,
+          rotation: crateStack.rotationY ? quatFromYRotation(crateStack.rotationY + level * 0.08) : undefined
+        });
+      }
+    }
+
+    for (const pot of mapConfig.pottery || []) {
+      const scale = Number(pot.scale) || 1;
+      addFixedCuboid(world, {
+        x: pot.x,
+        y: 0.46 * scale,
+        z: pot.z,
+        hx: 0.42 * scale,
+        hy: 0.46 * scale,
+        hz: 0.42 * scale,
+        friction: 0.88
+      });
+    }
+
+    for (const ramp of mapConfig.ramps || []) {
+      const angle = Math.atan2(ramp.topY, ramp.run);
+      const length = Math.hypot(ramp.run, ramp.topY);
+      const alongZ = ramp.direction === "north" || ramp.direction === "south";
+      let rotation;
+      if (ramp.direction === "north") rotation = quatFromXRotation(angle);
+      if (ramp.direction === "south") rotation = quatFromXRotation(-angle);
+      if (ramp.direction === "east") rotation = quatFromZRotation(-angle);
+      if (ramp.direction === "west") rotation = quatFromZRotation(angle);
+      addFixedCuboid(world, {
+        x: ramp.x,
+        y: ramp.topY * 0.5 + (ramp.thickness || 0.34) * 0.25,
+        z: ramp.z,
+        hx: (alongZ ? ramp.width : length) * 0.5,
+        hy: (ramp.thickness || 0.34) * 0.5,
+        hz: (alongZ ? length : ramp.width) * 0.5,
+        rotation,
+        friction: 0.95
+      });
+    }
+
+    const outerWallThickness = 0.35;
+    const outerWallHeight = 7;
+    const outerWallY = outerWallHeight * 0.5;
+    const limit = mapHalfSize + outerWallThickness;
+    addFixedCuboid(world, { x: -limit, y: outerWallY, z: 0, hx: outerWallThickness, hy: outerWallHeight * 0.5, hz: mapHalfSize + outerWallThickness });
+    addFixedCuboid(world, { x: limit, y: outerWallY, z: 0, hx: outerWallThickness, hy: outerWallHeight * 0.5, hz: mapHalfSize + outerWallThickness });
+    addFixedCuboid(world, { x: 0, y: outerWallY, z: -limit, hx: mapHalfSize + outerWallThickness, hy: outerWallHeight * 0.5, hz: outerWallThickness });
+    addFixedCuboid(world, { x: 0, y: outerWallY, z: limit, hx: mapHalfSize + outerWallThickness, hy: outerWallHeight * 0.5, hz: outerWallThickness });
+    return;
+  }
 
   addFixedCuboid(world, {
     x: mapConfig.platform.x,

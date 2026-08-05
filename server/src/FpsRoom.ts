@@ -19,8 +19,6 @@ const DEV_BOT_RANGE = 90;
 const DEV_BOT_DAMAGE = 8;
 const DEV_BOT_TRAJECTORY_RADIUS = 2.2;
 const DEV_BOT_TRAJECTORY_SPEED = 1.1;
-const SPAWN_MARGIN = 4;
-const MAP_HALF_SIZE = 40;
 const GRENADE_FUSE_MS = 1600;
 const GRENADE_THROW_SPEED = 32;
 const GRENADE_MIN_THROW_SPEED = 14;
@@ -44,8 +42,17 @@ const WEAPON_DAMAGE_LIMITS: Record<string, number> = {
   knife: 100
 };
 const GRENADE_PICKUP_POINTS = [
-  { id: "grenade-west", position: { x: -18, y: 0, z: 18 } },
-  { id: "grenade-east", position: { x: 18, y: 0, z: -18 } }
+  { id: "grenade-bazaar", position: { x: -3, y: 0, z: 1 } },
+  { id: "grenade-west", position: { x: -25, y: 0, z: 8 } },
+  { id: "grenade-caravanserai", position: { x: 23, y: 0, z: 9 } }
+];
+const SPAWN_POINTS: Vec3Like[] = [
+  { x: -33, y: 0, z: -30 }, { x: -15, y: 0, z: -34 },
+  { x: 16, y: 0, z: -35 }, { x: 33, y: 0, z: -24 },
+  { x: 34, y: 0, z: -5 }, { x: 31, y: 0, z: 29 },
+  { x: 17, y: 0, z: 34 }, { x: -5, y: 0, z: 34 },
+  { x: -34, y: 0, z: 26 }, { x: -34, y: 0, z: 18 },
+  { x: -34, y: 0, z: -6 }
 ];
 
 type RuntimePlayer = {
@@ -206,13 +213,30 @@ export class FpsRoom extends Room<{ state: FpsState }> {
     return this.runtime.get(id);
   }
 
-  private getSpawnPosition(): Vec3Like {
-    const half = MAP_HALF_SIZE - SPAWN_MARGIN;
-    return {
-      x: (Math.random() - 0.5) * half * 2,
-      y: 0,
-      z: (Math.random() - 0.5) * half * 2
-    };
+  private getSpawnPosition(excludedPlayerId: string | null = null): Vec3Like {
+    const occupied: Vec3Like[] = [];
+    this.state.players.forEach((player) => {
+      if (player.alive && player.id !== excludedPlayerId) {
+        occupied.push({ x: player.x, y: player.y, z: player.z });
+      }
+    });
+    if (this.devBot?.alive) occupied.push(this.devBot.position);
+
+    const ranked = SPAWN_POINTS.map((spawn) => ({
+      spawn,
+      nearestPlayerDistanceSq: occupied.length
+        ? Math.min(...occupied.map((position) => {
+            const dx = spawn.x - position.x;
+            const dz = spawn.z - position.z;
+            return dx * dx + dz * dz;
+          }))
+        : Number.POSITIVE_INFINITY
+    })).sort((a, b) => b.nearestPlayerDistanceSq - a.nearestPlayerDistanceSq);
+
+    // Pick among the three safest points so respawns stay distant without becoming predictable.
+    const safestPool = ranked.slice(0, Math.min(3, ranked.length));
+    const spawn = safestPool[Math.floor(Math.random() * safestPool.length)].spawn;
+    return { ...spawn };
   }
 
   private sanitizePosition(position: any): Vec3Like | null {
@@ -503,7 +527,7 @@ export class FpsRoom extends Room<{ state: FpsState }> {
       victim.health = MAX_HEALTH;
       victim.alive = true;
       runtime.invulnerableUntil = Date.now() + RESPAWN_IMMUNITY_MS;
-      const spawn = this.getSpawnPosition();
+      const spawn = this.getSpawnPosition(victim.id);
       victim.setPosition(spawn);
       victim.rotationY = 0;
 

@@ -15,14 +15,14 @@ import { createSoundController } from "./js/audio/sound-controller.js";
 import { initPhysics } from "./js/physics/rapier-physics.js";
 import { createEffectsController } from "./js/render/effects.js";
 import { createMenuCameraController } from "./js/render/menu-camera.js";
-import { createWorldRenderer } from "./js/render/world-renderer.js";
+import { createDesertWorldRenderer } from "./js/render/desert-world-renderer.js";
 import { createHudController } from "./js/ui/hud.js";
 import { createViewModel } from "./js/weapons.js";
-import { MAP_LAYOUT } from "./js/world/map-layout.js";
+import { DESERT_MAP_LAYOUT } from "./js/world/desert-map-layout.js";
 import { createSceneSetup } from "./js/world/scene.js";
 import { state } from "./js/state.js";
 
-const sceneSetup = createSceneSetup(dom.canvas);
+const sceneSetup = createSceneSetup(dom.canvas, DESERT_MAP_LAYOUT);
 const viewModel = await createViewModel();
 sceneSetup.camera.add(viewModel);
 
@@ -31,7 +31,7 @@ const ctx = createGameContext({
   state,
   sceneSetup,
   viewModel,
-  mapConfig: MAP_LAYOUT
+  mapConfig: DESERT_MAP_LAYOUT
 });
 
 function resizeRendererToViewport() {
@@ -41,7 +41,7 @@ function resizeRendererToViewport() {
   ctx.renderer.setSize(window.innerWidth, window.innerHeight);
 }
 
-ctx.controllers.world = createWorldRenderer(ctx);
+ctx.controllers.world = await createDesertWorldRenderer(ctx);
 ctx.controllers.menuCamera = createMenuCameraController();
 ctx.controllers.effects = createEffectsController(ctx);
 ctx.controllers.sound = createSoundController(ctx);
@@ -138,7 +138,7 @@ function animate() {
 
 ctx.controllers.socket.connect();
 ctx.physics = await initPhysics({
-  mapConfig: MAP_LAYOUT,
+  mapConfig: DESERT_MAP_LAYOUT,
   mapHalfSize: MAP_HALF_SIZE,
   playerHeight: state.playerHeight,
   gravity: GRENADE_CONFIG.gravity,

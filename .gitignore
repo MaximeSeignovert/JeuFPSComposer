@@ -40,3 +40,9 @@ coverage/
 .codex-server.pid
 .colyseus-test.log
 .colyseus-test.err
+
+# Downloaded texture source archives and high-resolution working files.
+# The game ships the optimized 1K runtime variants instead.
+public/assets/textures/desert/*.zip
+public/assets/textures/desert/**/*_2k.*
+public/assets/textures/desert/fabric/Fabric010_1K-JPG_Opacity.jpg
