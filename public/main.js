@@ -132,7 +132,9 @@ function animate() {
   ctx.controllers.world.update(time, delta);
   ctx.controllers.sound.updateListener();
   ctx.controllers.menuCamera.update(time);
-  ctx.viewModel.visible = state.joined;
+  // Le modèle première personne est attaché à la caméra : il doit disparaître
+  // pendant la caméra de mort, puis réapparaître au respawn.
+  ctx.viewModel.visible = state.joined && state.isAlive;
   ctx.renderer.render(ctx.scene, state.joined ? ctx.camera : ctx.controllers.menuCamera.camera);
 }
 
