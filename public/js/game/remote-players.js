@@ -6,7 +6,10 @@ import {
   createPlayerMesh,
   resetRemoteDeathVisual,
   resolvePlayerAppearanceAssets,
+  setRemoteWeapon,
   setRemoteDeathOpacity,
+  updateRemoteCombatPose,
+  updateRemoteLocomotion,
   updateNameTagSprite
 } from "../players/appearance.js";
 
@@ -176,6 +179,8 @@ export async function createRemotePlayersController(ctx) {
     const remotePlayer = ensure(msg.id);
     const shouldSnap = remotePlayer.alive === false && msg.alive !== false;
     remotePlayer.team = msg.team || remotePlayer.team || null;
+    setRemoteWeapon(remotePlayer.root, msg.weapon || remotePlayer.weapon || "ak47");
+    remotePlayer.weapon = msg.weapon || remotePlayer.weapon || "ak47";
     applySnapshot(remotePlayer, msg, shouldSnap);
     const isAlive = msg.alive !== false;
     if (isAlive && remotePlayer.alive === false) revive(remotePlayer);
@@ -206,6 +211,8 @@ export async function createRemotePlayersController(ctx) {
         !remotePlayer.targetPosition ||
         (remotePlayer.alive === false && p.alive !== false);
       remotePlayer.team = p.team || remotePlayer.team || null;
+      setRemoteWeapon(remotePlayer.root, p.weapon || remotePlayer.weapon || "ak47");
+      remotePlayer.weapon = p.weapon || remotePlayer.weapon || "ak47";
       applySnapshot(remotePlayer, p, shouldSnap);
       const playerColor = colorFromPlayerId(p.id);
       updateNameTagSprite(remotePlayer.root.userData.nameTag, p.name || "Player", playerColor);
@@ -238,8 +245,25 @@ export async function createRemotePlayersController(ctx) {
 
       if (!remotePlayer.targetPosition) return;
 
+      let movementSpeed = 0;
+      if (!remotePlayer.deathAnimation) {
+        const previousX = remotePlayer.root.position.x;
+        const previousY = remotePlayer.root.position.y;
+        const previousZ = remotePlayer.root.position.z;
+        remotePlayer.root.position.lerp(remotePlayer.targetPosition, t);
+        remotePlayer.root.rotation.y = lerpAngle(remotePlayer.root.rotation.y, remotePlayer.targetRotationY || 0, t);
+        movementSpeed = Math.hypot(
+          remotePlayer.root.position.x - previousX,
+          remotePlayer.root.position.y - previousY,
+          remotePlayer.root.position.z - previousZ
+        ) / Math.max(delta, 0.001);
+      }
+
       if (!remotePlayer.deathAnimation && remotePlayer.root.userData.mixer) {
         remotePlayer.root.userData.mixer.update(delta);
+        remotePlayer.root.updateMatrixWorld(true);
+        updateRemoteCombatPose(remotePlayer.root);
+        updateRemoteLocomotion(remotePlayer.root, delta, Math.min(movementSpeed, 6));
       } else if (!remotePlayer.deathAnimation && remotePlayer.root.userData.parts && time !== undefined) {
         const parts = remotePlayer.root.userData.parts;
         const baseTorsoY = Number(parts.baseTorsoY) || 1.43;
@@ -262,11 +286,6 @@ export async function createRemotePlayersController(ctx) {
           parts.torso.rotation.y = THREE.MathUtils.lerp(parts.torso.rotation.y, 0, 0.1);
           parts.torso.position.y = baseTorsoY;
         }
-      }
-
-      if (!remotePlayer.deathAnimation) {
-        remotePlayer.root.position.lerp(remotePlayer.targetPosition, t);
-        remotePlayer.root.rotation.y = lerpAngle(remotePlayer.root.rotation.y, remotePlayer.targetRotationY || 0, t);
       }
     });
   }

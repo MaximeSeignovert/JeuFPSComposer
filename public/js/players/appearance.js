@@ -7,11 +7,65 @@ const soldierUrl = new URL("../imported weapons/Soldier.glb", import.meta.url).h
 const soldierLoader = new GLTFLoader();
 let soldierAssetPromise = null;
 let soldierAsset = null;
+const remoteWeaponFiles = {
+  ak47: "AKM.glb",
+  shotgun: "Mossberg 590A1.glb",
+  sniper: "Sniper Rifle.glb",
+  knife: "Combat Knife.glb"
+};
+const remoteWeaponAssets = new Map();
+const remoteWeaponPoses = {
+  ak47: {
+    length: 1.08,
+    mount: [0, 1.27, 0.5],
+    rotation: [0, Math.PI * 0.5, 0],
+    rightHand: [-0.1, 1.19, 0.37],
+    leftHand: [0.08, 1.23, 0.67],
+    rightPole: [-0.46, 1.03, 0.24],
+    leftPole: [0.46, 1.08, 0.43]
+  },
+  shotgun: {
+    length: 1.12,
+    mount: [0, 1.27, 0.52],
+    rotation: [0, -Math.PI * 0.5, 0],
+    rightHand: [-0.1, 1.18, 0.36],
+    leftHand: [0.08, 1.22, 0.7],
+    rightPole: [-0.46, 1.02, 0.23],
+    leftPole: [0.46, 1.07, 0.45]
+  },
+  sniper: {
+    length: 1.2,
+    mount: [0, 1.29, 0.54],
+    rotation: [0, -Math.PI * 0.5, 0],
+    rightHand: [-0.1, 1.2, 0.36],
+    leftHand: [0.08, 1.25, 0.74],
+    rightPole: [-0.46, 1.04, 0.23],
+    leftPole: [0.46, 1.1, 0.48]
+  },
+  knife: {
+    length: 0.42,
+    mount: [-0.2, 1.09, 0.49],
+    rotation: [Math.PI * 0.5, 0, 0],
+    rightHand: [-0.2, 1.09, 0.34],
+    leftHand: [0.12, 1.14, 0.3],
+    rightPole: [-0.5, 0.96, 0.2],
+    leftPole: [0.42, 1.04, 0.2]
+  }
+};
 
 export function preloadPlayerAppearanceAssets() {
   if (!soldierAssetPromise) {
-    soldierAssetPromise = soldierLoader.loadAsync(soldierUrl).then((asset) => {
+    const weaponEntries = Object.entries(remoteWeaponFiles);
+    soldierAssetPromise = Promise.all([
+      soldierLoader.loadAsync(soldierUrl),
+      ...weaponEntries.map(([, file]) =>
+        soldierLoader.loadAsync(new URL(`../imported weapons/${file}`, import.meta.url).href)
+      )
+    ]).then(([asset, ...weaponAssets]) => {
       soldierAsset = asset;
+      weaponAssets.forEach((weaponAsset, index) => {
+        remoteWeaponAssets.set(weaponEntries[index][0], weaponAsset);
+      });
       return asset;
     });
   }
@@ -81,6 +135,180 @@ function createHitbox() {
   return hitbox;
 }
 
+function createRemoteWeaponMount() {
+  return new THREE.Group();
+}
+
+export function setRemoteWeapon(root, weaponKey) {
+  const combatPose = root?.userData?.combatPose;
+  const mount = combatPose?.weapon;
+  const normalizedKey = remoteWeaponFiles[weaponKey] ? weaponKey : "ak47";
+  const asset = remoteWeaponAssets.get(normalizedKey);
+  const pose = remoteWeaponPoses[normalizedKey];
+  if (!mount || !asset || root.userData.remoteWeaponKey === normalizedKey) return;
+
+  mount.clear();
+  const weapon = cloneSkeleton(asset.scene);
+  weapon.traverse((object) => {
+    if (!object.isMesh) return;
+    object.castShadow = false;
+    object.receiveShadow = false;
+    object.frustumCulled = false;
+  });
+
+  weapon.updateMatrixWorld(true);
+  const bounds = new THREE.Box3().setFromObject(weapon);
+  const size = bounds.getSize(new THREE.Vector3());
+  const longestSide = Math.max(size.x, size.y, size.z) || 1;
+  weapon.scale.multiplyScalar(pose.length / longestSide);
+  weapon.updateMatrixWorld(true);
+  weapon.position.sub(new THREE.Box3().setFromObject(weapon).getCenter(new THREE.Vector3()));
+
+  weapon.rotation.fromArray(pose.rotation);
+  mount.add(weapon);
+  mount.position.fromArray(pose.mount);
+  combatPose.rightHandTarget = pose.rightHand;
+  combatPose.leftHandTarget = pose.leftHand;
+  combatPose.rightPoleTarget = pose.rightPole;
+  combatPose.leftPoleTarget = pose.leftPole;
+  combatPose.twoHanded = normalizedKey !== "knife";
+  root.userData.remoteWeaponKey = normalizedKey;
+}
+
+function rotateBoneAroundWorldAxis(bone, axis, angle) {
+  if (!bone || Math.abs(angle) < 0.0001) return;
+  const parentWorldRotation = bone.parent.getWorldQuaternion(new THREE.Quaternion());
+  const localAxis = axis.clone().applyQuaternion(parentWorldRotation.invert()).normalize();
+  bone.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(localAxis, angle));
+}
+
+function rotateBoneToward(bone, child, target) {
+  if (!bone || !child) return;
+
+  bone.updateWorldMatrix(true, false);
+  child.updateWorldMatrix(true, false);
+  const origin = bone.getWorldPosition(new THREE.Vector3());
+  const currentEnd = child.getWorldPosition(new THREE.Vector3());
+  const currentDirection = currentEnd.sub(origin).normalize();
+  const targetDirection = target.clone().sub(origin).normalize();
+  if (currentDirection.lengthSq() < 0.0001 || targetDirection.lengthSq() < 0.0001) return;
+
+  const worldRotation = new THREE.Quaternion().setFromUnitVectors(currentDirection, targetDirection);
+  const parentRotation = bone.parent.getWorldQuaternion(new THREE.Quaternion());
+  const localRotation = parentRotation.clone().invert()
+    .multiply(worldRotation)
+    .multiply(parentRotation);
+  bone.quaternion.premultiply(localRotation);
+}
+
+function solveTwoBoneIk(root, upperArm, foreArm, hand, target, pole) {
+  if (!upperArm || !foreArm || !hand) return;
+
+  root.updateMatrixWorld(true);
+  const shoulderPosition = upperArm.getWorldPosition(new THREE.Vector3());
+  const elbowPosition = foreArm.getWorldPosition(new THREE.Vector3());
+  const handPosition = hand.getWorldPosition(new THREE.Vector3());
+  const upperLength = shoulderPosition.distanceTo(elbowPosition);
+  const lowerLength = elbowPosition.distanceTo(handPosition);
+  if (upperLength < 0.001 || lowerLength < 0.001) return;
+
+  const shoulderToTarget = target.clone().sub(shoulderPosition);
+  const rawDistance = shoulderToTarget.length();
+  if (rawDistance < 0.001) return;
+
+  const direction = shoulderToTarget.normalize();
+  const minReach = Math.abs(upperLength - lowerLength) + 0.002;
+  const maxReach = upperLength + lowerLength - 0.002;
+  const distance = THREE.MathUtils.clamp(rawDistance, minReach, maxReach);
+  const reachableTarget = shoulderPosition.clone().addScaledVector(direction, distance);
+  const along = (upperLength * upperLength - lowerLength * lowerLength + distance * distance) / (2 * distance);
+  const height = Math.sqrt(Math.max(0, upperLength * upperLength - along * along));
+
+  const shoulderToPole = pole.clone().sub(shoulderPosition);
+  const poleDirection = shoulderToPole.clone()
+    .addScaledVector(direction, -shoulderToPole.dot(direction));
+  if (poleDirection.lengthSq() < 0.0001) poleDirection.set(0, -1, 0);
+  poleDirection.normalize();
+  const solvedElbow = shoulderPosition.clone()
+    .addScaledVector(direction, along)
+    .addScaledVector(poleDirection, height);
+
+  rotateBoneToward(upperArm, foreArm, solvedElbow);
+  root.updateMatrixWorld(true);
+  rotateBoneToward(foreArm, hand, reachableTarget);
+  root.updateMatrixWorld(true);
+}
+
+export function updateRemoteCombatPose(root) {
+  const combatPose = root?.userData?.combatPose;
+  if (!combatPose) return;
+
+  const { bones, modelPivot } = combatPose;
+  const target = (position) => modelPivot.localToWorld(new THREE.Vector3().fromArray(position));
+  const rightHandTarget = target(combatPose.rightHandTarget);
+  const leftHandTarget = target(combatPose.leftHandTarget);
+  const rightPoleTarget = target(combatPose.rightPoleTarget);
+  const leftPoleTarget = target(combatPose.leftPoleTarget);
+
+  solveTwoBoneIk(root, bones.rightArm, bones.rightForeArm, bones.rightHand, rightHandTarget, rightPoleTarget);
+  if (combatPose.twoHanded) {
+    solveTwoBoneIk(root, bones.leftArm, bones.leftForeArm, bones.leftHand, leftHandTarget, leftPoleTarget);
+  }
+}
+
+function createLocomotionController(model, bones) {
+  const bone = (name) => bones[name] || null;
+  return {
+    phase: 0,
+    blend: 0,
+    baseModelY: model.position.y,
+    bones: {
+      spine: bone("mixamorig:Spine"),
+      leftUpLeg: bone("mixamorig:LeftUpLeg"),
+      rightUpLeg: bone("mixamorig:RightUpLeg"),
+      leftLeg: bone("mixamorig:LeftLeg"),
+      rightLeg: bone("mixamorig:RightLeg"),
+      leftFoot: bone("mixamorig:LeftFoot"),
+      rightFoot: bone("mixamorig:RightFoot")
+    }
+  };
+}
+
+export function updateRemoteLocomotion(root, delta, speed) {
+  const locomotion = root?.userData?.locomotion;
+  if (!locomotion) return;
+
+  const targetBlend = speed > 0.18 ? 1 : 0;
+  locomotion.blend = THREE.MathUtils.damp(locomotion.blend, targetBlend, 10, Math.max(delta, 0));
+  const amount = locomotion.blend;
+  if (amount < 0.002) {
+    root.userData.model.position.y = locomotion.baseModelY;
+    return;
+  }
+
+  // A complete step is faster when the replicated character is moving faster,
+  // while remaining readable at the low movement speeds of interpolated peers.
+  locomotion.phase += delta * THREE.MathUtils.clamp(4.5 + speed * 1.7, 4.5, 10.5);
+  const stride = Math.sin(locomotion.phase) * 0.5 * amount;
+  const leftKnee = Math.max(0, -Math.sin(locomotion.phase)) * 0.38 * amount;
+  const rightKnee = Math.max(0, Math.sin(locomotion.phase)) * 0.38 * amount;
+  const leftFootLift = Math.max(0, -Math.sin(locomotion.phase)) * 0.22 * amount;
+  const rightFootLift = Math.max(0, Math.sin(locomotion.phase)) * 0.22 * amount;
+  const { bones } = locomotion;
+  const characterRight = new THREE.Vector3(1, 0, 0).transformDirection(root.matrixWorld);
+
+  // Mixamo leg bones have rotated local axes. Applying the stride around the
+  // character's world-space right axis produces an actual forward/back step.
+  rotateBoneAroundWorldAxis(bones.leftUpLeg, characterRight, stride);
+  rotateBoneAroundWorldAxis(bones.rightUpLeg, characterRight, -stride);
+  rotateBoneAroundWorldAxis(bones.leftLeg, characterRight, -leftKnee);
+  rotateBoneAroundWorldAxis(bones.rightLeg, characterRight, -rightKnee);
+  rotateBoneAroundWorldAxis(bones.leftFoot, characterRight, leftFootLift);
+  rotateBoneAroundWorldAxis(bones.rightFoot, characterRight, rightFootLift);
+
+  root.userData.model.position.y = locomotion.baseModelY + Math.abs(Math.sin(locomotion.phase * 2)) * 0.018 * amount;
+}
+
 export function createPlayerMesh(isLocal = false) {
   if (isLocal) {
     const localMesh = new THREE.Mesh(new THREE.CapsuleGeometry(0.35, 1.1, 6, 10), localMaterial);
@@ -125,17 +353,43 @@ export function createPlayerMesh(isLocal = false) {
   root.userData.model = model;
   root.userData.modelPivot = modelPivot;
   root.userData.bones = {};
+  const registerBone = (bone) => {
+    if (!bone?.name) return;
+    root.userData.bones[bone.name] = bone;
+    if (bone.name.startsWith("mixamorig") && !bone.name.startsWith("mixamorig:")) {
+      root.userData.bones[`mixamorig:${bone.name.slice("mixamorig".length)}`] = bone;
+    }
+  };
   model.traverse((object) => {
-    if (object.isBone && object.name) root.userData.bones[object.name] = object;
+    if (object.isBone) registerBone(object);
     if (!object.isSkinnedMesh || !object.skeleton?.bones) return;
-    object.skeleton.bones.forEach((bone) => {
-      if (bone?.name) root.userData.bones[bone.name] = bone;
-    });
+    object.skeleton.bones.forEach(registerBone);
   });
+  const weaponMount = createRemoteWeaponMount();
+  modelPivot.add(weaponMount);
   root.userData.materials = { teamMaterials };
   root.userData.groundOffset = 0;
   root.userData.mixer = mixer;
   root.userData.idleAction = idleAction;
+  root.userData.locomotion = createLocomotionController(model, root.userData.bones);
+  root.userData.combatPose = {
+    weapon: weaponMount,
+    modelPivot,
+    rightHandTarget: remoteWeaponPoses.ak47.rightHand,
+    leftHandTarget: remoteWeaponPoses.ak47.leftHand,
+    rightPoleTarget: remoteWeaponPoses.ak47.rightPole,
+    leftPoleTarget: remoteWeaponPoses.ak47.leftPole,
+    twoHanded: true,
+    bones: {
+      leftArm: root.userData.bones["mixamorig:LeftArm"],
+      leftForeArm: root.userData.bones["mixamorig:LeftForeArm"],
+      leftHand: root.userData.bones["mixamorig:LeftHand"],
+      rightArm: root.userData.bones["mixamorig:RightArm"],
+      rightForeArm: root.userData.bones["mixamorig:RightForeArm"],
+      rightHand: root.userData.bones["mixamorig:RightHand"]
+    }
+  };
+  setRemoteWeapon(root, "ak47");
 
   return root;
 }
@@ -277,6 +531,7 @@ export function resetRemoteDeathVisual(root) {
 
   root.visible = true;
   root.userData.modelPivot?.rotation.set(0, Math.PI, 0);
+  if (root.userData.locomotion) root.userData.model.position.y = root.userData.locomotion.baseModelY;
   if (root.userData.nameTag) root.userData.nameTag.visible = true;
   if (root.userData.hitbox) root.userData.hitbox.visible = true;
 
