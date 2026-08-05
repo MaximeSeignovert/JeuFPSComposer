@@ -43,6 +43,7 @@ export const state = {
   joined: false,
   pauseOpen: false,
   pauseOpenedAt: 0,
+  showFps: false,
   grenadeSequence: 0,
   lastGrenadePickupAttemptAt: 0,
   viewRecoilZ: 0,

@@ -122,7 +122,7 @@ function animate() {
   const delta = ctx.clock.getDelta();
   const time = performance.now() * 0.001;
 
-  ctx.controllers.hud.updateFrame();
+  ctx.controllers.hud.updateFrame(delta);
   ctx.camera.rotation.set(state.pitch, state.yaw, 0, "YXZ");
   ctx.controllers.player.update(delta);
   ctx.controllers.weapons.update(delta);

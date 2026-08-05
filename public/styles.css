@@ -246,6 +246,20 @@ button.active {
     pointer-events: none;
 }
 
+.fps-counter {
+    position: fixed;
+    top: max(14px, env(safe-area-inset-top));
+    left: max(14px, env(safe-area-inset-left));
+    z-index: 20;
+    color: #fff;
+    font-size: 16px;
+    font-variant-numeric: tabular-nums;
+    font-weight: 800;
+    line-height: 1;
+    pointer-events: none;
+    text-shadow: 0 1px 4px #000;
+}
+
 .hud-right {
     display: flex;
     align-items: center;
@@ -1178,6 +1192,28 @@ button.active {
     color: var(--accent);
     font-weight: 800;
     font-variant-numeric: tabular-nums;
+}
+
+.fps-setting {
+    margin-top: 14px;
+}
+
+.fps-setting__label {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    cursor: pointer;
+}
+
+.fps-setting__label input[type="checkbox"] {
+    width: 18px;
+    min-height: 18px;
+    height: 18px;
+    margin: 0;
+    padding: 0;
+    accent-color: var(--accent);
+    cursor: pointer;
 }
 
 .key-bindings-list {

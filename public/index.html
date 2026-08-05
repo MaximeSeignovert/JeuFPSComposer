@@ -122,6 +122,7 @@
       </section>
 
       <section id="hud" class="hud hidden">
+        <output id="fpsCounter" class="fps-counter hidden" aria-label="Images par seconde"></output>
         <div
           class="hud-health-wrap fixed left-4 top-1/2 z-20 flex h-[38vh] min-h-44 max-h-80 w-3 -translate-y-1/2 items-end overflow-hidden rounded-full pointer-events-none"
           role="meter"
@@ -235,6 +236,12 @@
       <section id="pauseMenu" class="pause-menu">
         <h3>Menu pause</h3>
         <p class="subtitle">Utilise la touche « Pause / menu » (réglable ci-dessous) pour ouvrir ou fermer ce menu.</p>
+        <div class="field-row fps-setting">
+          <label class="fps-setting__label" for="fpsToggle">
+            <span>Afficher les FPS</span>
+            <input id="fpsToggle" type="checkbox" />
+          </label>
+        </div>
         <div class="field-row">
           <span>Classe d'arme</span>
           <div id="weaponChoice" class="weapon-choice">

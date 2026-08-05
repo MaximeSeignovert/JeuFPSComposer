@@ -7,6 +7,8 @@ import { resetTouchInput, syncTouchControls } from "../input/touch-controls.js";
 const DEATH_WEAPON_LABELS = {
   grenade: "Grenade"
 };
+const SHOW_FPS_STORAGE_KEY = "fps.showFps";
+const FPS_UPDATE_INTERVAL = 0.5;
 
 export function createHudController(ctx) {
   const { camera, state } = ctx;
@@ -19,6 +21,8 @@ export function createHudController(ctx) {
     deathKillerWeapon,
     deathKillerWeaponIcon,
     deathScreen,
+    fpsCounter,
+    fpsToggle,
     hud,
     hudAmmo,
     hudAmmoCount,
@@ -47,6 +51,41 @@ export function createHudController(ctx) {
   } = ctx.dom;
   let renderedDeathWeapon = null;
   let renderedWeaponSlots = "";
+  let fpsFrameCount = 0;
+  let fpsElapsed = 0;
+
+  function readShowFpsPreference() {
+    try {
+      return window.localStorage.getItem(SHOW_FPS_STORAGE_KEY) === "true";
+    } catch {
+      return false;
+    }
+  }
+
+  function setFpsEnabled(enabled, { persist = true } = {}) {
+    state.showFps = Boolean(enabled);
+    fpsToggle && (fpsToggle.checked = state.showFps);
+    fpsCounter?.classList.toggle("hidden", !state.showFps);
+    fpsFrameCount = 0;
+    fpsElapsed = 0;
+    if (!state.showFps && fpsCounter) fpsCounter.textContent = "";
+    if (!persist) return;
+    try {
+      window.localStorage.setItem(SHOW_FPS_STORAGE_KEY, String(state.showFps));
+    } catch {
+      // La préférence reste valable pour la session si le stockage est indisponible.
+    }
+  }
+
+  function updateFps(delta) {
+    if (!state.showFps || !fpsCounter) return;
+    fpsFrameCount += 1;
+    fpsElapsed += Number.isFinite(delta) ? Math.max(0, delta) : 0;
+    if (fpsElapsed < FPS_UPDATE_INTERVAL) return;
+    fpsCounter.textContent = String(Math.round(fpsFrameCount / fpsElapsed));
+    fpsFrameCount = 0;
+    fpsElapsed = 0;
+  }
 
   function getDeathWeaponLabel(weapon) {
     return WEAPON_STATS[weapon]?.label || DEATH_WEAPON_LABELS[weapon] || "Inconnue";
@@ -436,13 +475,17 @@ export function createHudController(ctx) {
     renderScoreboard(players);
   }
 
-  function updateFrame() {
+  function updateFrame(delta) {
+    updateFps(delta);
     updateZoom();
     updateGrenadeCharge();
     updateShotCooldown();
     updateRespawnNotice();
     updateDeathScreen();
   }
+
+  setFpsEnabled(readShowFpsPreference(), { persist: false });
+  fpsToggle?.addEventListener("change", () => setFpsEnabled(fpsToggle.checked));
 
   return {
     addKillFeedEntry,
