@@ -5,6 +5,7 @@
   "main": "dist/server/src/index.js",
   "scripts": {
     "build": "tsc",
+    "test": "tsx --test server/src/dev-bot-ai.test.ts",
     "start": "node dist/server/src/index.js",
     "dev": "tsx watch server/src/index.ts"
   },

@@ -7,6 +7,15 @@ import {
   Vec3Like,
   Vec3State
 } from "./schema";
+import {
+  DESERT_NAVIGATION,
+  aimDirection,
+  distance2D,
+  findWaypointRoute,
+  hasLineOfSight,
+  nearestWaypoint,
+  selectNearestVisibleTarget
+} from "./dev-bot-ai";
 
 const ROOM_SIZE = 10;
 const MAX_HEALTH = 100;
@@ -15,10 +24,15 @@ const RESPAWN_IMMUNITY_MS = 1800;
 const ENABLE_DEV_BOT = process.env.DEV_BOT === "1" || process.env.NODE_ENV !== "production";
 const DEV_BOT_MOVE_INTERVAL_MS = 60;
 const DEV_BOT_BULLET_SPEED = 70;
-const DEV_BOT_RANGE = 90;
-const DEV_BOT_DAMAGE = 8;
-const DEV_BOT_TRAJECTORY_RADIUS = 2.2;
-const DEV_BOT_TRAJECTORY_SPEED = 1.1;
+const DEV_BOT_RANGE = 52;
+const DEV_BOT_DAMAGE = 7;
+const DEV_BOT_MOVE_SPEED = 3.7;
+const DEV_BOT_COMBAT_DISTANCE = 14;
+const DEV_BOT_REACTION_MS = 650;
+const DEV_BOT_BURST_PAUSE_MS = 900;
+const DEV_BOT_SHOT_INTERVAL_MS = 125;
+const DEV_BOT_MAX_BURST_SHOTS = 4;
+const DEV_BOT_TARGET_MEMORY_MS = 2600;
 const GRENADE_FUSE_MS = 1600;
 const GRENADE_THROW_SPEED = 32;
 const GRENADE_MIN_THROW_SPEED = 14;
@@ -72,9 +86,17 @@ type DevBot = {
   deaths: number;
   position: Vec3Like;
   direction: Vec3Like;
-  center: Vec3Like;
-  phase: number;
   rotationY: number;
+  mode: "patrol" | "pursuit" | "combat";
+  targetId: string | null;
+  lastKnownTargetPosition: Vec3Like | null;
+  targetVisibleSince: number;
+  targetMemoryUntil: number;
+  destinationWaypointId: string | null;
+  route: string[];
+  routeIndex: number;
+  nextFireAt: number;
+  burstShotsRemaining: number;
   timer: NodeJS.Timeout | null;
   respawnTimer: NodeJS.Timeout | null;
 };
@@ -189,9 +211,17 @@ export class FpsRoom extends Room<{ state: FpsState }> {
       deaths: 0,
       position: { x: 0, y: 0, z: 0 },
       direction: { x: 1, y: 0, z: 0 },
-      center: { x: 0, y: 0, z: 0 },
-      phase: Math.random() * Math.PI * 2,
       rotationY: 0,
+      mode: "patrol",
+      targetId: null,
+      lastKnownTargetPosition: null,
+      targetVisibleSince: 0,
+      targetMemoryUntil: 0,
+      destinationWaypointId: null,
+      route: [],
+      routeIndex: 0,
+      nextFireAt: 0,
+      burstShotsRemaining: 0,
       timer: null,
       respawnTimer: null
     };
@@ -497,7 +527,7 @@ export class FpsRoom extends Room<{ state: FpsState }> {
     }
   }
 
-  private killAndScheduleRespawn(victim: PlayerState, killer: PlayerState | null = null, killerWeapon: string | null = null) {
+  private killAndScheduleRespawn(victim: PlayerState, killer: PlayerState | DevBot | null = null, killerWeapon: string | null = null) {
     if (!victim.alive) return;
 
     victim.health = 0;
@@ -547,37 +577,145 @@ export class FpsRoom extends Room<{ state: FpsState }> {
 
     const origin = this.getSpawnPosition();
     this.devBot.position = { ...origin };
-    this.devBot.center = { ...origin };
-    this.devBot.phase = Math.random() * Math.PI * 2;
-    this.devBot.rotationY = 0;
+    this.resetDevBotAi();
     this.broadcast("player:update", this.devBotUpdatePayload());
 
     this.devBot.timer = setInterval(() => {
-      if (!this.devBot || this.state.players.size === 0 || !this.devBot.alive) return;
-      this.devBot.phase += DEV_BOT_TRAJECTORY_SPEED * (DEV_BOT_MOVE_INTERVAL_MS / 1000);
-      const angle = this.devBot.phase;
-      const x = this.devBot.center.x + Math.cos(angle) * DEV_BOT_TRAJECTORY_RADIUS;
-      const z = this.devBot.center.z + Math.sin(angle) * DEV_BOT_TRAJECTORY_RADIUS;
-      const tangentX = -Math.sin(angle);
-      const tangentZ = Math.cos(angle);
-      const dirLength = Math.hypot(tangentX, tangentZ) || 1;
-      this.devBot.direction = { x: tangentX / dirLength, y: 0, z: tangentZ / dirLength };
-      this.devBot.rotationY = Math.atan2(-this.devBot.direction.x, -this.devBot.direction.z);
-      this.devBot.position = { x, y: this.devBot.center.y, z };
-
-      this.broadcast("player:update", this.devBotUpdatePayload());
-      this.broadcast("player:shoot", {
-        id: this.devBot.id,
-        origin: this.devBot.position,
-        weapon: this.devBot.weapon,
-        shots: [{
-          direction: this.devBot.direction,
-          damage: DEV_BOT_DAMAGE,
-          range: DEV_BOT_RANGE,
-          bulletSpeed: DEV_BOT_BULLET_SPEED
-        }]
-      });
+      this.updateDevBot(Date.now());
     }, DEV_BOT_MOVE_INTERVAL_MS);
+  }
+
+  private resetDevBotAi() {
+    if (!this.devBot) return;
+    this.devBot.direction = { x: 0, y: 0, z: -1 };
+    this.devBot.rotationY = 0;
+    this.devBot.mode = "patrol";
+    this.devBot.targetId = null;
+    this.devBot.lastKnownTargetPosition = null;
+    this.devBot.targetVisibleSince = 0;
+    this.devBot.targetMemoryUntil = 0;
+    this.devBot.destinationWaypointId = null;
+    this.devBot.route = [];
+    this.devBot.routeIndex = 0;
+    this.devBot.nextFireAt = 0;
+    this.devBot.burstShotsRemaining = 0;
+  }
+
+  private updateDevBot(now: number) {
+    const bot = this.devBot;
+    if (!bot || this.state.players.size === 0 || !bot.alive) return;
+
+    const targets = Array.from(this.state.players.values()).map((player) => ({
+      id: player.id,
+      alive: player.alive,
+      position: { x: player.x, y: player.y + PLAYER_CENTER_HEIGHT, z: player.z }
+    }));
+    const muzzleOrigin = { x: bot.position.x, y: bot.position.y + 1.25, z: bot.position.z };
+    const visibleTarget = selectNearestVisibleTarget(muzzleOrigin, targets);
+
+    if (visibleTarget) {
+      if (bot.targetId !== visibleTarget.id) {
+        bot.targetId = visibleTarget.id;
+        bot.targetVisibleSince = now;
+        bot.burstShotsRemaining = 0;
+        bot.nextFireAt = now + DEV_BOT_REACTION_MS;
+      }
+      bot.lastKnownTargetPosition = { ...visibleTarget.position };
+      bot.targetMemoryUntil = now + DEV_BOT_TARGET_MEMORY_MS;
+      bot.mode = distance2D(bot.position, visibleTarget.position) > DEV_BOT_COMBAT_DISTANCE ? "pursuit" : "combat";
+      this.moveBotToward(visibleTarget.position, DEV_BOT_MOVE_SPEED * (DEV_BOT_MOVE_INTERVAL_MS / 1000));
+      this.tryDevBotShot(visibleTarget, muzzleOrigin, now);
+    } else if (bot.lastKnownTargetPosition && now < bot.targetMemoryUntil) {
+      bot.mode = "pursuit";
+      this.followBotRoute(bot.lastKnownTargetPosition);
+    } else {
+      bot.mode = "patrol";
+      bot.targetId = null;
+      bot.lastKnownTargetPosition = null;
+      this.followBotRoute(null);
+    }
+
+    this.broadcast("player:update", this.devBotUpdatePayload());
+  }
+
+  private moveBotToward(destination: Vec3Like, maximumStep: number) {
+    const bot = this.devBot;
+    if (!bot) return;
+    const dx = destination.x - bot.position.x;
+    const dz = destination.z - bot.position.z;
+    const distance = Math.hypot(dx, dz);
+    if (distance <= 0.001) return;
+    const step = Math.min(maximumStep, distance);
+    bot.direction = { x: dx / distance, y: 0, z: dz / distance };
+    bot.rotationY = Math.atan2(-bot.direction.x, -bot.direction.z);
+    bot.position = { x: bot.position.x + bot.direction.x * step, y: 0, z: bot.position.z + bot.direction.z * step };
+  }
+
+  private followBotRoute(targetPosition: Vec3Like | null) {
+    const bot = this.devBot;
+    if (!bot) return;
+    const current = nearestWaypoint(bot.position);
+    const destination = targetPosition ? nearestWaypoint(targetPosition) : null;
+    const needsNewRoute = !bot.route.length || bot.routeIndex >= bot.route.length ||
+      (destination && bot.destinationWaypointId !== destination.id);
+
+    if (needsNewRoute) {
+      const from = current?.id;
+      const to = destination?.id || DESERT_NAVIGATION[Math.floor(Math.random() * DESERT_NAVIGATION.length)].id;
+      bot.destinationWaypointId = to;
+      bot.route = from ? findWaypointRoute(from, to) : [to];
+      bot.routeIndex = 0;
+    }
+
+    const waypointId = bot.route[bot.routeIndex];
+    const waypoint = DESERT_NAVIGATION.find((entry) => entry.id === waypointId);
+    if (!waypoint) {
+      bot.route = [];
+      return;
+    }
+    if (distance2D(bot.position, waypoint.position) < 0.45) {
+      bot.routeIndex += 1;
+      return;
+    }
+    if (!hasLineOfSight(bot.position, waypoint.position)) {
+      bot.route = [];
+      bot.destinationWaypointId = null;
+      return;
+    }
+    this.moveBotToward(waypoint.position, DEV_BOT_MOVE_SPEED * (DEV_BOT_MOVE_INTERVAL_MS / 1000));
+  }
+
+  private tryDevBotShot(target: { id: string; position: Vec3Like }, muzzleOrigin: Vec3Like, now: number) {
+    const bot = this.devBot;
+    const victim = this.state.players.get(target.id);
+    if (!bot || !victim?.alive || now < bot.nextFireAt) return;
+    if (distance2D(muzzleOrigin, target.position) > DEV_BOT_RANGE || !hasLineOfSight(muzzleOrigin, target.position)) return;
+
+    if (bot.burstShotsRemaining <= 0) bot.burstShotsRemaining = 2 + Math.floor(Math.random() * (DEV_BOT_MAX_BURST_SHOTS - 1));
+    const direction = aimDirection(muzzleOrigin, target.position, 0.035);
+    bot.direction = { x: direction.x, y: 0, z: direction.z };
+    bot.rotationY = Math.atan2(-direction.x, -direction.z);
+    bot.burstShotsRemaining -= 1;
+    bot.nextFireAt = now + (bot.burstShotsRemaining > 0 ? DEV_BOT_SHOT_INTERVAL_MS : DEV_BOT_BURST_PAUSE_MS);
+
+    this.broadcast("player:shoot", {
+      id: bot.id,
+      origin: muzzleOrigin,
+      weapon: bot.weapon,
+      shots: [{ direction, damage: DEV_BOT_DAMAGE, range: DEV_BOT_RANGE, bulletSpeed: DEV_BOT_BULLET_SPEED }]
+    });
+
+    // The visual trajectory has a small spread too; a deliberate miss keeps this dev bot forgiving.
+    if (Math.random() > 0.72) return;
+    const runtime = this.getRuntime(victim.id);
+    if (now < (runtime?.invulnerableUntil || 0)) return;
+    victim.health = Math.max(0, victim.health - DEV_BOT_DAMAGE);
+    this.sendHealth(victim);
+    if (victim.health > 0) {
+      this.sendRoomPlayers();
+      return;
+    }
+    this.killAndScheduleRespawn(victim, bot, bot.weapon);
   }
 
   private stopDevBot() {
@@ -614,9 +752,7 @@ export class FpsRoom extends Room<{ state: FpsState }> {
       this.devBot.health = MAX_HEALTH;
       this.devBot.alive = true;
       this.devBot.position = { ...spawn };
-      this.devBot.center = { ...spawn };
-      this.devBot.phase = Math.random() * Math.PI * 2;
-      this.devBot.rotationY = 0;
+      this.resetDevBotAi();
       this.broadcast("player:update", this.devBotUpdatePayload());
       this.sendRoomPlayers();
     }, RESPAWN_DELAY_MS);
