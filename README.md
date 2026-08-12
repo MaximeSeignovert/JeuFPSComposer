@@ -1,13 +1,16 @@
-# FPS 5v5 Three.js
+# FPS Three.js + Colyseus
 
 FPS 1ere personne avec:
 - menu d'accueil unique avec pseudo et bouton `Jouer`
-- matchmaking 5v5 (2 equipes de 5)
+- room jusqu'a 10 joueurs, mode actuel **FFA** (le 5v5 reste une intention)
 - trois classes d'arme: `Fusil a pompe`, `Sniper`, `AK47`
 - deux slots permanents par classe: arme principale et `Couteau`
 - un slot `Grenade` dynamique est ajouté lors d'un ramassage
+- map desert Qasr Al-Rih
 - rendu Three.js
 - backend Colyseus pour les rooms et la synchronisation
+
+Contexte pour agents IA : `AGENTS.md` (index) et `CONTEXTE_PROJET.md` (briefing).
 
 ## Lancer en local
 
@@ -31,7 +34,7 @@ retourne `{ ok: true }`.
 ## Notes gameplay
 
 - Clic dans le canvas: capture souris (pointer lock).
-- Deplacement: `WASD`.
+- Deplacement: `ZQSD` (AZERTY, remappable).
 - Saut: `Espace`.
 - Tir: `Clic gauche`.
 - Maintenir clic gauche: tir continu.
@@ -41,4 +44,4 @@ retourne `{ ok: true }`.
 - Grenade: `G` l'equipe, maintenir le clic charge la puissance et relacher lance.
 - Sur mobile, le bouton de changement d'arme parcourt les slots.
 - Effets de tir: flash de bouche, trajectoire de balle, impact visuel.
-- Le jeu est un prototype multijoueur de base (lobby + synchro positions) pret a etendre (tir, degats, score, respawn).
+- Prototype jouable : lobby, tirs, degats, score, respawn, grenades, bot de dev.

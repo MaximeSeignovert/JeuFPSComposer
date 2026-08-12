@@ -1,0 +1,37 @@
+---
+description: Conventions du client ES modules (controllers, state, HUD, input)
+globs: public/**/*.js
+alwaysApply: false
+---
+
+# Client JS
+
+`public/main.js` compose la scène, le `ctx`, les controllers, Rapier, puis la boucle `requestAnimationFrame`.
+
+## Patterns
+
+```js
+// ✅ factory + ctx partagé
+export function createWeaponsController(ctx) {
+  function update(delta) { /* lit ctx.state, ctx.controllers */ }
+  return { update, selectPrimaryWeapon };
+}
+
+// ❌ singleton / état hors ctx.state
+let ammo = 30;
+```
+
+- État mutable : `public/js/state.js` uniquement.
+- Références DOM : `public/js/dom.js`.
+- Constantes : `public/js/config.js`.
+- Réseau : uniquement via `ctx.controllers.socket` (`socket-client.js`).
+- Input clavier/souris et tactile appellent les mêmes méthodes controller (tir, saut, slots).
+
+## Armes
+
+Slots circulaires : `[primaire, knife]` + slot `grenade` temporaire après pickup.
+Stats dans `WEAPON_STATS`. Le HUD lit `state.weaponSlots`.
+
+## Éditeur map
+
+`asset-editor.js` est un outil localhost (F2). Les transforms visuels ne mettent pas à jour Rapier tant que `desert-map-layout.js` n'est pas recollé.

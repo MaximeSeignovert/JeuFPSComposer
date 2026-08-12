@@ -1,0 +1,30 @@
+---
+description: Autorité serveur Colyseus, schémas, validation, bot de dev
+globs: server/**/*.ts
+alwaysApply: false
+---
+
+# Serveur Colyseus
+
+- Room logique : `fps_room`, `maxClients = 10`, `autoDispose = false`.
+- Autorité : `server/src/FpsRoom.ts`. Schémas : `server/src/schema.ts`.
+- HTTP : `server/src/index.ts` (static `public/`, `/health`, `/api/rooms`, vendor Rapier + SDK).
+
+## Validation
+
+Toujours sanitiser côté serveur : nom (20 chars), arme (`ALLOWED_WEAPONS`), dégâts (`WEAPON_DAMAGE_LIMITS`), positions, vitesse de grenade.
+
+```ts
+// ✅ le serveur borne
+const damage = Math.min(WEAPON_DAMAGE_LIMITS[weapon] ?? 0, Number(msg.damage) || 0);
+
+// ❌ appliquer msg.damage tel quel
+```
+
+Nouveau message = handler `onMessage` dans `FpsRoom` **et** `onMessage` + `send()` dans `socket-client.js`.
+
+## Bot
+
+Actif si `NODE_ENV !== "production"` ou `DEV_BOT=1`. Nav / LOS : `dev-bot-ai.ts`.
+Si la map change, mettre à jour `DESERT_NAVIGATION` et `DESERT_BLOCKING_VOLUMES`.
+Tests : `npm test` (`server/src/dev-bot-ai.test.ts`).

@@ -1,0 +1,23 @@
+---
+description: Cohérence map désert, collisions Rapier, nav bot et éditeur d'assets
+globs: public/js/world/desert-map-layout.js,public/js/render/desert-world-renderer.js,public/js/physics/rapier-physics.js,public/js/asset-editor.js,server/src/dev-bot-ai.ts,server/src/FpsRoom.ts
+alwaysApply: false
+---
+
+# Map + physique
+
+Map live : `DESERT_MAP_LAYOUT` (id `qasr-al-rih-ffa`).
+`solid: true` → triangles FBX pour Rapier et hitscan.
+
+## Checklist d'un changement de map
+
+1. `public/js/world/desert-map-layout.js` — assets, `buildingScale`, `boundaryWall`.
+2. `public/js/render/desert-world-renderer.js` — chargement FBX / textures.
+3. `public/js/physics/rapier-physics.js` — colliders (souvent dérivés des meshes `solid`).
+4. `server/src/FpsRoom.ts` — `SPAWN_POINTS`, `GRENADE_PICKUP_POINTS`.
+5. `server/src/dev-bot-ai.ts` — waypoints + volumes d'occlusion.
+6. `npm test` si la nav / LOS change.
+
+L'éditeur F2 copie une config à coller dans le layout. La physique ignore les déplacements live de l'éditeur.
+
+`MAP_HALF_SIZE` (client) et les murs `boundaryWall.limit` / volumes bot doivent rester cohérents (playable ≈ 40).

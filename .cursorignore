@@ -1,0 +1,13 @@
+# Keep agent context on source, not binaries or build output.
+node_modules/
+dist/
+coverage/
+*.log
+*.tsbuildinfo
+
+# 3D kits, textures and imported weapon meshes are not useful as text.
+*.fbx
+*.glb
+*.bin
+public/assets/
+public/js/imported weapons/

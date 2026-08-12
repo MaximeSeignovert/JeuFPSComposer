@@ -1,279 +1,156 @@
 # Contexte projet - JeuFPSComposer
 
-Ce fichier sert de briefing rapide pour reprendre le projet sans historique de conversation.
+Briefing détaillé. Index court : `AGENTS.md`.
 
 ## But du projet
 
-`JeuFPSComposer` est un prototype de FPS multijoueur en navigateur, en vue premiere personne, avec une arene 5v5/room jusqu'a 10 joueurs.
+Prototype de FPS multijoueur en navigateur, vue première personne, room jusqu'à 10 joueurs.
 
-Fonctionnalites principales actuelles :
+Intention produit (README) : matchmaking 5v5. **Gameplay actuel : FFA** (`team: "ffa"`, `team:select` rejeté).
 
-- menu d'accueil avec pseudo et bouton unique pour rejoindre l'arène ;
-- rendu 3D avec Three.js ;
-- serveur Express + Colyseus pour synchroniser les joueurs ;
-- physique locale avec Rapier 3D ;
-- trois classes principales : `AK47`, `Fusil a pompe`, `Sniper`, chacune avec un slot `Couteau` ;
-- tirs, degats, morts, respawn, kill feed ;
-- grenades avec pickups, lancer, rebonds, explosion ;
-- HUD vie/munitions/grenade ;
-- controles clavier/souris configurables ;
-- controles tactiles mobiles ;
-- bot de developpement active hors production.
+Fonctionnalités live :
 
-## Stack technique
+- menu pseudo + choix d'arme + bouton Jouer ;
+- Three.js, physique Rapier locale, serveur Express + Colyseus ;
+- classes `AK47`, `Fusil a pompe`, `Sniper`, chacune avec `Couteau` ;
+- tirs, dégâts validés serveur, morts, respawn, kill feed, immunité spawn ;
+- grenades (pickups, charge, lancer, rebonds, explosion) ;
+- HUD vie / munitions / slots d'armes ;
+- contrôles AZERTY configurables + tactile mobile ;
+- map désert Qasr Al-Rih (kit FBX) ;
+- bot de développement hors production ;
+- éditeur d'assets localhost (F2).
 
-- Runtime : Node.js `>=22`
-- Serveur : Express `4.x`, Colyseus `0.17`, WebSocket transport Colyseus
-- Client : HTML/CSS/JavaScript modules ES natifs, sans bundler
-- 3D : Three.js charge depuis CDN `unpkg`
-- Physique : `@dimforge/rapier3d-compat`, servi localement via `/vendor/rapier/rapier.mjs`
-- UI utilitaire : Tailwind CDN dans `public/index.html`
-- Icones tactiles : Lucide charge depuis CDN `unpkg`
-- Deploiement cible : serveur Node generique compatible avec `PORT`
+## Stack
 
-## Commandes utiles
+- Node.js `>=22`
+- Serveur : Express 4, Colyseus 0.17, WebSocket transport
+- Client : HTML/CSS/JS modules ES, **sans bundler**
+- 3D : Three.js `0.164.1` (unpkg)
+- Physique : `@dimforge/rapier3d-compat` via `/vendor/rapier/rapier.mjs`
+- UI : Tailwind CDN + CSS maison (`public/styles.css`)
+- Tests : `node:test` via `tsx --test` (bot uniquement)
+
+## Commandes
 
 ```bash
 npm install
-npm run dev
+npm run dev      # tsx watch server/src/index.ts
+npm test         # server/src/dev-bot-ai.test.ts
+npm run build    # tsc → dist/
+npm start        # node dist/server/src/index.js
 ```
 
-Le serveur demarre par defaut sur `http://localhost:3000`.
+Env : `PORT` (3000), `NODE_ENV=production` (coupe le bot), `DEV_BOT=1` (force le bot).
+Santé : `GET /health` → `{ ok: true }`.
 
-Scripts disponibles :
+## Architecture
 
-- `npm run dev` : lance `tsx watch server/src/index.ts`
-- `npm run build` : compile le serveur TypeScript dans `dist/`
-- `npm start` : lance `node dist/server/src/index.js`
+Le serveur sert `public/` en statique. `public/main.js` importe des modules relatifs.
 
-Variables/env utiles :
+1. `server/src/index.ts` : Express + Colyseus + WS, crée la room `fps_room`.
+2. `public/index.html` : DOM, CDN, SDK Colyseus local (`/vendor/game-net.js`), `main.js`.
+3. `public/main.js` : scène, `createGameContext`, controllers, Rapier, boucle RAF.
+4. `public/js/net/socket-client.js` : join + dispatch messages.
+5. `server/src/FpsRoom.ts` : autorité joueurs, dégâts, respawn, grenades, bot.
 
-- `PORT` : port HTTP, defaut `3000`
-- `NODE_ENV=production` : desactive le bot de developpement par defaut
-- `DEV_BOT=1` : force l'activation du bot de developpement
+## Fichiers d'entrée
 
-Endpoint de sante :
+- `server/src/index.ts` — HTTP, static, `/health`, `/api/rooms`, vendor Rapier/SDK
+- `server/src/FpsRoom.ts` — room, validation, broadcasts, bot
+- `server/src/schema.ts` — `PlayerState`, pickups, grenades actives
+- `server/src/dev-bot-ai.ts` — graphe de nav désert + LOS
+- `public/index.html` — menu, HUD, pause, tactile, canvas
+- `public/main.js` — composition
+- `public/js/config.js` — constantes client
+- `public/js/state.js` — état runtime
+- `public/js/game/context.js` — objet `ctx` partagé
 
-- `GET /health` -> `{ ok: true }`
-
-## Architecture generale
-
-Le projet n'utilise pas de bundler client : le serveur Colyseus/Express sert directement les fichiers statiques de `public/`, et `public/main.js` importe les modules client avec des chemins relatifs.
-
-Flux simplifie :
-
-1. `server/src/index.ts` lance Express, Colyseus et le transport WebSocket.
-2. `public/index.html` charge le CSS, le SDK Colyseus local, les CDN et `public/main.js`.
-3. `public/main.js` cree la scene Three.js, le contexte de jeu, les controllers, puis initialise Rapier.
-4. Le client rejoint la room Colyseus via `public/js/net/socket-client.js`.
-5. `server/src/FpsRoom.ts` gere joueurs, degats, respawn, grenades et broadcasts.
-
-## Fichiers d'entree
-
-- `server/src/index.ts` : backend HTTP, routes statiques, `/health`, `/api/rooms`, SDK Colyseus local.
-- `server/src/FpsRoom.ts` : room Colyseus, joueurs, degats, respawn, grenades, bot de dev.
-- `server/src/schema.ts` : schemas Colyseus synchronises.
-- `public/index.html` : structure DOM complete de l'app, menu, HUD, pause, controles tactiles, canvas.
-- `public/main.js` : composition des controllers, initialisation scene/physique/reseau, boucle `requestAnimationFrame`.
-- `public/styles.css` : styles globaux, menu, HUD, effets, controles tactiles.
-- `public/js/config.js` : constantes client centrales, touches par defaut, armes, grenade, taille map.
-- `public/js/state.js` : etat runtime mutable du client.
-
-## Modules client importants
+## Modules client
 
 ### Jeu
 
-- `public/js/game/context.js` : fabrique le contexte partage entre controllers.
-- `public/js/game/player-controller.js` : mouvement, saut, jump pads, spawn safe, envoi des positions.
-- `public/js/game/weapons-controller.js` : classes et slots d'armes, munitions, reload, tir, recul, visee, melee.
-- `public/js/game/grenades-controller.js` : pickups, lancer, simulation/effets grenade.
-- `public/js/game/remote-players.js` : representation et interpolation des autres joueurs.
+- `game/player-controller.js` — move, saut, échelles, envoi positions
+- `game/weapons-controller.js` — slots, munitions, tir, recul, visée, melee
+- `game/grenades-controller.js` — pickups, lancer, simu / effets
+- `game/remote-players.js` — interpolation des autres joueurs
 
-### Rendu
+### Rendu / monde
 
-- `public/js/world/scene.js` : creation scene/camera/renderer/lumieres de base.
-- `public/js/world/map-layout.js` : donnees declaratives de la map.
-- `public/js/render/world-renderer.js` : construction visuelle de la map, props, pickups, jump pads.
-- `public/js/render/effects.js` : impacts, bullets visuelles, muzzle flash, explosions, hitmarker/damage overlay.
-- `public/js/weapons.js` : modeles 3D maison des armes en view model.
+- `world/scene.js` — camera / renderer / lumières
+- `world/desert-map-layout.js` — **map live** (données)
+- `render/desert-world-renderer.js` — **map live** (FBX + textures)
+- `render/effects.js` — impacts, tracers, muzzle, explosions, overlays
+- `render/menu-camera.js` — caméra menu tant que non joined
+- `weapons.js` — view model 1P
+- `asset-editor.js` — gizmo localhost, copie de config
 
-### Entrees utilisateur
+Ancienne map **non branchée** : `world/map-layout.js`, `render/world-renderer.js`.
 
-- `public/js/input/keyboard-mouse.js` : pointer lock, souris, touches, tirs clavier/souris.
-- `public/js/input/touch-controls.js` : joysticks et boutons mobiles.
-- `public/js/input/keybinding-ui.js` : UI de remapping clavier + persistence localStorage.
-- `public/js/input/camera-sensitivity.js` : reglages sensibilite camera.
-- `public/js/input/fullscreen.js` : synchro plein ecran.
+### Input / net / UI
 
-### Reseau/UI/Donnees
+- `input/keyboard-mouse.js`, `touch-controls.js`, `keybinding-ui.js`, `camera-sensitivity.js`, `fullscreen.js`
+- `net/socket-client.js`
+- `ui/hud.js`, `dom.js`, `player-name.js`, `key-bindings.js`
+- `audio/sound-controller.js`
+- `players/appearance.js`
+- `physics/rapier-physics.js`
 
-- `public/js/net/socket-client.js` : client Colyseus et dispatch des messages serveur.
-- `public/js/ui/hud.js` : rooms, HUD, vie, munitions, grenade, kill feed, pause/death screen.
-- `public/js/dom.js` : references DOM centralisees.
-- `public/js/player-name.js` : pseudo et sanitation localStorage.
-- `public/js/key-bindings.js` : persistence/normalisation des touches.
-- `public/js/players/appearance.js` : apparence des joueurs distants.
-- `public/js/physics/rapier-physics.js` : monde Rapier, collisions map, controller personnage, grenades physiques.
+## Backend
 
-## Backend Colyseus
+Constantes utiles (`FpsRoom.ts`) :
 
-Constantes principales :
+- `ROOM_SIZE = 10`, `MAX_HEALTH = 100`
+- `RESPAWN_DELAY_MS = 3200`, `RESPAWN_IMMUNITY_MS = 1800`
+- armes bornées par `WEAPON_DAMAGE_LIMITS`
+- pickups : `grenade-bazaar`, `grenade-west`, `grenade-caravanserai`
+- bot : `DEV_BOT=1` ou non-production
 
-- room logique interne unique `fps_room` (non exposée dans le menu)
-- `ROOM_SIZE = 10`
-- `MAX_HEALTH = 100`
-- `RESPAWN_DELAY_MS = 3200`
-- `RESPAWN_IMMUNITY_MS = 1800`
-- `MAP_HALF_SIZE = 40`
-- armes limitees par `WEAPON_DAMAGE_LIMITS`
-- pickups grenades : `grenade-west`, `grenade-east`
+Le serveur sanitise noms, positions, dégâts, armes, vitesse de grenade.
 
-Responsabilites serveur :
+## Protocole
 
-- cree une room Colyseus persistante au demarrage ;
-- sert `public/` ;
-- expose Rapier et le SDK Colyseus depuis `node_modules` ;
-- expose `/api/rooms` pour le lobby ;
-- tient la liste des joueurs dans `FpsRoom` ;
-- assigne id, room, team/FFA, spawn, arme, vie ;
-- valide/sanitise les positions et degats ;
-- broadcast les updates joueurs, tirs, morts, respawns et grenades ;
-- gere les pickups et respawns de grenades ;
-- anime un bot de dev quand active.
+Client → serveur : `player:setName`, `room:sync`, `player:update`, `player:shoot`, `player:hit`, `weapon:select`, `grenade:pickup`, `grenade:throw`, `grenade:explode`.
 
-## Protocole Colyseus
+Serveur → client : `room:joined`, `room:players`, `room:error`, `room:grenades`, `player:update`, `player:health`, `player:grenadeInventory`, `player:died`, `player:respawn`, `player:shoot`, `grenade:thrown`, `grenade:explode`.
 
-Messages client -> serveur principaux :
+`team:select` → `room:error` (FFA).
 
-- `player:setName`
-- `room:sync`
-- `player:update`
-- `player:shoot`
-- `player:hit`
-- `weapon:select`
-- `grenade:pickup`
-- `grenade:throw`
-- `grenade:explode`
+## Gameplay
 
-Messages room -> client principaux :
+Stats client dans `WEAPON_STATS` (`config.js`) : ak47 auto 20 dmg / 20 balles, shotgun 12 pellets, sniper 100 dmg / FOV 28, knife melee 100.
 
-- `room:joined`
-- `room:players`
-- `room:error`
-- `room:grenades`
-- `player:update`
-- `player:health`
-- `player:grenadeInventory`
-- `player:died`
-- `player:respawn`
-- `player:shoot`
-- `grenade:thrown`
-- `grenade:explode`
+Slots : `[primaire, knife]` + grenade temporaire. Molette et bouton mobile cyclent. `G` équipe la grenade. Clic maintenu charge le lancer.
 
-Le client rejoint la room via le SDK Colyseus puis dispatch ces messages dans `public/js/net/socket-client.js`.
+Map : `buildingScale`, `boundaryWall` (limit 40), assets FBX `solid` pour collisions. Physique, rendu et layout doivent rester alignés. Nav bot dans `dev-bot-ai.ts`.
 
-## Donnees gameplay importantes
-
-Les stats d'armes sont dans `public/js/config.js` :
-
-- `ak47` : automatique, chargeur 20, degats 20.
-- `shotgun` : 12 pellets, chargeur 5, courte portee.
-- `sniper` : degats 100, chargeur 1, zoom FOV 28.
-- `knife` : melee, degats 100, vitesse de deplacement augmentee.
-
-Le client conserve une liste `weaponSlots` circulaire. Le slot 1 contient l'arme principale de la classe choisie et le slot 2 le couteau. Le ramassage d'une grenade ajoute temporairement un troisieme slot, retire apres le lancer ou au respawn. La molette parcourt ces slots (bas = suivant, haut = precedent), tandis qu'un bouton dedie assure le meme changement sur mobile. `G` et le bouton grenade equipent directement ce slot. Une pression maintenue sur le tir charge la puissance du lancer, puis le relachement lance la grenade. Le serveur borne et rediffuse la vitesse demandee par le client.
-
-Le HUD de combat en bas a droite rend dynamiquement `weaponSlots` sous forme de cartes numerotees, avec l'arme active mise en evidence. Le slot grenade apparait et disparait avec l'inventaire.
-
-La map est declaree dans `public/js/world/map-layout.js` :
-
-- plateforme centrale ;
-- rampes ;
-- blocs de couverture ;
-- caisses empilees ;
-- piliers ;
-- murs de limites ;
-- jump pads ;
-- props rotatifs.
-
-La physique map doit rester coherente entre :
-
-- rendu : `public/js/render/world-renderer.js`
-- collisions : `public/js/physics/rapier-physics.js`
-- donnees : `public/js/world/map-layout.js`
-
-## Arborescence utile
-
-`node_modules/` est volontairement exclu de cette vue.
+## Arborescence (sources)
 
 ```text
 .
-|-- .gitignore
+|-- AGENTS.md
 |-- CONTEXTE_PROJET.md
-|-- README.md
 |-- package.json
-|-- package-lock.json
-|-- server.js
-|-- codex-server.log
-|-- codex-server.err.log
 |-- public/
 |   |-- index.html
 |   |-- main.js
 |   |-- styles.css
-|   |-- js/
-|   |   |-- config.js
-|   |   |-- dom.js
-|   |   |-- key-bindings.js
-|   |   |-- player-name.js
-|   |   |-- state.js
-|   |   |-- weapons.js
-|   |   |-- game/
-|   |   |   |-- context.js
-|   |   |   |-- grenades-controller.js
-|   |   |   |-- player-controller.js
-|   |   |   |-- remote-players.js
-|   |   |   `-- weapons-controller.js
-|   |   |-- input/
-|   |   |   |-- camera-sensitivity.js
-|   |   |   |-- fullscreen.js
-|   |   |   |-- keybinding-ui.js
-|   |   |   |-- keyboard-mouse.js
-|   |   |   `-- touch-controls.js
-|   |   |-- net/
-|   |   |   `-- socket-client.js
-|   |   |-- physics/
-|   |   |   `-- rapier-physics.js
-|   |   |-- players/
-|   |   |   `-- appearance.js
-|   |   |-- render/
-|   |   |   |-- effects.js
-|   |   |   `-- world-renderer.js
-|   |   |-- ui/
-|   |   |   `-- hud.js
-|   |   `-- world/
-|   |       |-- map-layout.js
-|   |       `-- scene.js
-|   `-- vendor/
-|-- server/
-|   `-- src/
-|       |-- FpsRoom.ts
-|       |-- index.ts
-|       `-- schema.ts
-`-- tests/
+|   |-- js/          # modules client
+|   `-- assets/      # FBX + textures (binaires, hors contexte agent)
+`-- server/src/
+    |-- index.ts
+    |-- FpsRoom.ts
+    |-- schema.ts
+    |-- dev-bot-ai.ts
+    `-- dev-bot-ai.test.ts
 ```
 
-Notes :
+## Points d'attention
 
-- `tests/` et `public/vendor/` existent mais semblent vides actuellement.
-- `codex-server.log` et `codex-server.err.log` sont des logs locaux, pas des sources.
-- Le projet est sur la branche `main` et suit `origin/main`.
-
-## Points d'attention pour une reprise
-
-- Il n'y a actuellement pas de suite de tests declaree dans `package.json`.
-- Les CDN Three.js, Tailwind et Lucide sont charges directement par le navigateur : une connexion internet est necessaire au runtime client.
-- Le backend gameplay vit dans `server/src/FpsRoom.ts`; toute evolution reseau doit verifier le client Colyseus et les messages room.
-- Les constantes existent parfois cote client et cote serveur : garder les valeurs synchronisees quand elles impactent le gameplay.
-- Rapier est servi par Express depuis `node_modules`; ne pas casser la route `/vendor/rapier/rapier.mjs`.
-- Les controles par defaut sont AZERTY (`zqsd`) et persistent via `localStorage`.
-- Le bot de dev peut influencer les tests manuels locaux si `NODE_ENV` n'est pas `production`.
+- Pas de suite de tests client. `npm test` couvre la nav/LOS du bot.
+- CDN Three/Tailwind/Lucide : internet requis au runtime client.
+- Toute évolution réseau : `FpsRoom` + `socket-client.js`.
+- Constantes souvent dupliquées client/serveur : les aligner.
+- Ne pas casser `/vendor/rapier/rapier.mjs` ni `/vendor/game-net.js`.
+- L'éditeur F2 ne met pas à jour Rapier tant que le layout n'est pas recollé.
+- Le bot fausse les tests manuels locaux si `NODE_ENV` n'est pas `production`.

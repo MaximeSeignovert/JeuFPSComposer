@@ -1,0 +1,29 @@
+---
+description: Conventions globales JeuFPSComposer — stack, architecture, ce qu'il ne faut pas faire
+alwaysApply: true
+---
+
+# JeuFPSComposer
+
+FPS navigateur FFA. Lire `AGENTS.md` en premier. Détail : `CONTEXTE_PROJET.md`.
+
+## Stack
+
+- Client : ES modules dans `public/`, Three.js 0.164 CDN, pas de bundler.
+- Serveur : TypeScript dans `server/src/`, Express + Colyseus, `tsx watch`.
+- Physique : Rapier via `/vendor/rapier/rapier.mjs` (route Express, ne pas casser).
+
+## Style
+
+- Client : factories `createX(ctx)`, pas de classes, pas de TypeScript dans `public/`.
+- Imports Three : `https://unpkg.com/three@0.164.1/build/three.module.js`.
+- UI en français, ids/messages réseau en anglais.
+- Contrôles défaut AZERTY (`zqsd`), pas WASD.
+
+## Interdit
+
+- Ajouter Vite/Webpack/React/TS client sans demande explicite.
+- Brancher l'ancienne map (`map-layout.js`, `world-renderer.js`).
+- Modifier une constante de gameplay d'un seul côté (client XOR serveur).
+- Committer `.fbx` / `.glb` / textures sauf demande.
+- Logger des secrets (il n'y en a pas ; garder ça ainsi).
