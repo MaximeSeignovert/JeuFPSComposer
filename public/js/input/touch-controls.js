@@ -19,6 +19,7 @@ import { syncFullscreenButton, toggleFullscreenMode } from "./fullscreen.js";
 
 let updateHudKeyHints = () => {};
 let cancelPrimaryFire = () => {};
+const MAX_LOOK_DELTA = 36;
 
 export function shouldUsePointerLock() {
   return !mobileControlsQuery.matches;
@@ -119,8 +120,8 @@ function beginTouchLook(event, captureTarget = touchControls) {
 function updateTouchLook(event) {
   if (touchInput.look.pointerId !== event.pointerId) return false;
   event.preventDefault();
-  const dx = event.clientX - touchInput.look.lastX;
-  const dy = event.clientY - touchInput.look.lastY;
+  const dx = THREE.MathUtils.clamp(event.clientX - touchInput.look.lastX, -MAX_LOOK_DELTA, MAX_LOOK_DELTA);
+  const dy = THREE.MathUtils.clamp(event.clientY - touchInput.look.lastY, -MAX_LOOK_DELTA, MAX_LOOK_DELTA);
   touchInput.look.lastX = event.clientX;
   touchInput.look.lastY = event.clientY;
   state.yaw -= dx * 0.004 * state.cameraSensitivity;

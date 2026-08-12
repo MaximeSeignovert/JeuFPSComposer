@@ -29,7 +29,7 @@ export function createPlayerController(ctx) {
   }
 
   function updateMovement(delta) {
-    if (!ctx.physics || !state.joined || state.pauseOpen || !state.isAlive) {
+    if (!ctx.physics || !state.joined || state.pauseOpen || state.editorOpen || !state.isAlive) {
       ctx.smoothedMoveVelocity.set(0, 0, 0);
       return;
     }

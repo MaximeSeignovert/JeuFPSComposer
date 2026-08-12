@@ -39,7 +39,7 @@ function addFixedCuboid(world, { x, y, z, hx, hy, hz, rotation, friction = 0.82,
   return world.createCollider(desc);
 }
 
-function addWorldColliders(world, mapConfig, mapHalfSize) {
+function addWorldColliders(world, mapConfig, mapHalfSize, worldCollisionMeshes = []) {
   addFixedCuboid(world, {
     x: 0,
     y: -FLOOR_THICKNESS * 0.5,
@@ -51,6 +51,14 @@ function addWorldColliders(world, mapConfig, mapHalfSize) {
   });
 
   if (mapConfig.kind === "desert") {
+    for (const collisionMesh of worldCollisionMeshes) {
+      if (collisionMesh.vertices.length < 9 || collisionMesh.indices.length < 3) continue;
+      world.createCollider(
+        RAPIER.ColliderDesc.trimesh(collisionMesh.vertices, collisionMesh.indices)
+          .setFriction(0.86)
+      );
+    }
+
     for (const structure of mapConfig.structures || []) {
       if (structure.collider === false) continue;
       addFixedCuboid(world, {
@@ -279,12 +287,12 @@ function addWorldColliders(world, mapConfig, mapHalfSize) {
   addFixedCuboid(world, { x: 0, y: outerWallY, z: limit, hx: mapHalfSize + outerWallThickness, hy: outerWallHeight * 0.5, hz: outerWallThickness });
 }
 
-export async function initPhysics({ mapConfig, mapHalfSize, playerHeight, gravity, grenadeConfig }) {
+export async function initPhysics({ mapConfig, mapHalfSize, worldCollisionMeshes, playerHeight, gravity, grenadeConfig }) {
   await RAPIER.init({ module_or_path: undefined });
 
   const world = new RAPIER.World({ x: 0, y: -Math.abs(Number(gravity) || 26), z: 0 });
   world.maxCcdSubsteps = 4;
-  addWorldColliders(world, mapConfig, mapHalfSize);
+  addWorldColliders(world, mapConfig, mapHalfSize, worldCollisionMeshes);
 
   const playerTotalHeight = playerHeight + PLAYER_EXTRA_HEADROOM;
   const playerCapsuleHalfHeight = Math.max(0.1, (playerTotalHeight - PLAYER_RADIUS * 2) * 0.5);

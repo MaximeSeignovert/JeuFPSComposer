@@ -42,6 +42,7 @@ export const state = {
   deathKillerWeapon: "",
   joined: false,
   pauseOpen: false,
+  editorOpen: false,
   pauseOpenedAt: 0,
   showFps: false,
   grenadeSequence: 0,

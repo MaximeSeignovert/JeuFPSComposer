@@ -1571,6 +1571,88 @@ button.active {
     display: none;
 }
 
+.asset-editor {
+    position: fixed;
+    top: 18px;
+    left: 18px;
+    z-index: 30;
+    display: grid;
+    gap: 10px;
+    width: min(330px, calc(100vw - 36px));
+    padding: 16px;
+    border: 1px solid rgba(200, 243, 106, 0.6);
+    background: rgba(8, 12, 10, 0.92);
+    color: #edf1eb;
+    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+    font-family: Bahnschrift, "Arial Narrow", sans-serif;
+    pointer-events: auto;
+}
+
+.asset-editor__eyebrow {
+    color: #c8f36a;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+}
+
+.asset-editor h2,
+.asset-editor p {
+    margin: 0;
+}
+
+.asset-editor h2 {
+    font-size: 20px;
+    letter-spacing: -0.03em;
+    text-transform: uppercase;
+}
+
+.asset-editor__help,
+.asset-editor__note,
+.asset-editor__transform {
+    color: #aeb8ad;
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+.asset-editor__selection {
+    overflow: hidden;
+    color: #fff;
+    font-size: 13px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.asset-editor__modes {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+}
+
+.asset-editor button {
+    min-height: 34px;
+    padding: 7px;
+    border-color: rgba(200, 243, 106, 0.38);
+    border-radius: 0;
+    background: rgba(200, 243, 106, 0.1);
+    color: #edf1eb;
+    font-size: 11px;
+}
+
+.asset-editor button:hover {
+    border-color: #c8f36a;
+    background: rgba(200, 243, 106, 0.2);
+}
+
+.asset-editor button:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.asset-editor kbd {
+    color: #c8f36a;
+}
+
 /* Direction visuelle : monochrome low-poly, verre fumé et formes nettes. */
 :root {
     --bg: #0a0a0a;

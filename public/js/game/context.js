@@ -14,6 +14,8 @@ export function createGameContext({ dom, state, sceneSetup, viewModel, mapConfig
     physics: null,
     controllers: {},
     worldColliders: [],
+    worldCollisionMeshes: [],
+    editableAssets: [],
     mapAnimators: [],
     grenadePickups: new Map(),
     grenadePickupMeshes: new Map(),

@@ -1,4 +1,5 @@
-import * as THREE from "https://unpkg.com/three@0.164.1/build/three.module.js";
+﻿import * as THREE from "https://unpkg.com/three@0.164.1/build/three.module.js";
+import { FBXLoader } from "three/addons/loaders/FBXLoader.js";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 
 function seededRandom(seed) {
@@ -10,6 +11,59 @@ function seededRandom(seed) {
 }
 
 const TEXTURE_ROOT = "/assets/textures/desert";
+const DESERT_BUILDINGS_ROOT = "/assets/Low Poly Desert Buildings";
+
+function isWallKitFile(file) {
+  return /(?:^|\/)Wall [A-Z]\.fbx$/i.test(file);
+}
+
+function wallKitScale(file, nativeSize, size) {
+  if (!size) {
+    return Math.min(nativeSize.x, nativeSize.y, nativeSize.z) > 0 ? 1 : 0;
+  }
+  if (isWallKitFile(file)) {
+    const nativeLength = Math.max(nativeSize.x, nativeSize.z);
+    const nativeThickness = Math.min(nativeSize.x, nativeSize.z);
+    return Math.min(size[0] / nativeLength, size[1] / nativeSize.y, size[2] / nativeThickness);
+  }
+  return Math.min(size[0] / nativeSize.x, size[1] / nativeSize.y, size[2] / nativeSize.z);
+}
+
+async function loadDesertAssetLibrary(assets) {
+  const loader = new FBXLoader();
+  const files = [...new Set(assets.map(({ file }) => file))];
+  const loadedAssets = await Promise.all(files.map(async (file) => {
+    try {
+      const model = await loader.loadAsync(encodeURI(`${DESERT_BUILDINGS_ROOT}/${file}`));
+      const processedMaterials = new Set();
+      model.traverse((object) => {
+        if (!object.isMesh) return;
+        object.castShadow = true;
+        object.receiveShadow = true;
+        const sourceMaterials = Array.isArray(object.material) ? object.material : [object.material];
+        for (const material of sourceMaterials) {
+          if (processedMaterials.has(material)) continue;
+          processedMaterials.add(material);
+          // Keep the authored FBX palette out of the world's filmic color grading.
+          material.toneMapped = false;
+          if (!material.color) continue;
+          const hsl = {};
+          material.color.getHSL(hsl);
+          // The kit's highly saturated orange plaster overwhelms the desert lighting.
+          // Keep dark wood intact while shifting exposed walls to sun-bleached sandstone.
+          if (hsl.h > 0.02 && hsl.h < 0.16 && hsl.s > 0.18 && hsl.l > 0.2) {
+            material.color.setHSL(0.09, hsl.s * 0.38, Math.min(0.72, hsl.l + 0.08));
+          }
+        }
+      });
+      return [file, model];
+    } catch (error) {
+      console.warn(`Unable to load desert asset: ${file}`, error);
+      return [file, null];
+    }
+  }));
+  return new Map(loadedAssets);
+}
 
 async function createMaterials(renderer) {
   const loader = new THREE.TextureLoader();
@@ -145,7 +199,10 @@ async function createMaterials(renderer) {
 
 export async function createDesertWorldRenderer(ctx) {
   const { scene, mapConfig, renderer } = ctx;
-  const materials = await createMaterials(renderer);
+  const [materials, desertAssets] = await Promise.all([
+    createMaterials(renderer),
+    loadDesertAssetLibrary(mapConfig.assets || [])
+  ]);
   const up = new THREE.Vector3(0, 1, 0);
 
   renderer.shadowMap.enabled = true;
@@ -660,6 +717,125 @@ export async function createDesertWorldRenderer(ctx) {
     });
   }
 
+  function addDesertAsset(assetConfig, assetIndex) {
+    const { file, x, y = 0, z, size, scale, rotationY = 0, solid = false, building = false } = assetConfig;
+    const source = desertAssets.get(file);
+    if (!source) return;
+
+    const asset = source.clone(true);
+    asset.updateMatrixWorld(true);
+    const nativeSize = new THREE.Box3().setFromObject(asset).getSize(new THREE.Vector3());
+    if (nativeSize.x <= 0 || nativeSize.y <= 0 || nativeSize.z <= 0) return;
+
+    // Keep the authored proportions: source models must never be stretched per axis.
+    // Wall kits author length on the long horizontal axis, while layout `size` is [length, height, thickness].
+    const authoredScale = Number.isFinite(scale)
+      ? scale
+      : wallKitScale(file, nativeSize, size);
+    const buildingScale = building ? Number(mapConfig.buildingScale) || 1 : 1;
+    asset.scale.setScalar(authoredScale * buildingScale);
+    asset.rotation.y = rotationY;
+    asset.updateMatrixWorld(true);
+    const bounds = new THREE.Box3().setFromObject(asset);
+    asset.position.set(x, y - bounds.min.y, z);
+    asset.userData.editableAsset = true;
+    asset.userData.assetConfig = assetConfig;
+    asset.userData.assetIndex = assetIndex;
+    ctx.editableAssets.push(asset);
+    scene.add(asset);
+
+    if (!solid) return;
+    asset.updateMatrixWorld(true);
+    asset.traverse((object) => {
+      if (!object.isMesh || !object.geometry?.attributes?.position) return;
+      const sourcePositions = object.geometry.attributes.position;
+      const vertices = new Float32Array(sourcePositions.count * 3);
+      const vertex = new THREE.Vector3();
+      for (let index = 0; index < sourcePositions.count; index += 1) {
+        vertex.fromBufferAttribute(sourcePositions, index).applyMatrix4(object.matrixWorld);
+        vertices[index * 3] = vertex.x;
+        vertices[index * 3 + 1] = vertex.y;
+        vertices[index * 3 + 2] = vertex.z;
+      }
+
+      const sourceIndices = object.geometry.index;
+      const sourceIndexCount = sourceIndices ? sourceIndices.count : sourcePositions.count;
+      const indices = new Uint32Array(Math.floor(sourceIndexCount / 3) * 6);
+      for (let sourceIndex = 0, targetIndex = 0; sourceIndex + 2 < sourceIndexCount; sourceIndex += 3) {
+        const a = sourceIndices ? sourceIndices.getX(sourceIndex) : sourceIndex;
+        const b = sourceIndices ? sourceIndices.getX(sourceIndex + 1) : sourceIndex + 1;
+        const c = sourceIndices ? sourceIndices.getX(sourceIndex + 2) : sourceIndex + 2;
+        // FBX shells are often open planes. Duplicate winding makes each visible surface solid from both sides.
+        indices.set([a, b, c, a, c, b], targetIndex);
+        targetIndex += 6;
+      }
+      ctx.worldCollisionMeshes.push({ vertices, indices });
+      ctx.worldColliders.push(object);
+    });
+  }
+
+  function addBoundaryWalls() {
+    const boundaryWall = mapConfig.boundaryWall;
+    if (!boundaryWall) return;
+    const source = desertAssets.get(boundaryWall.file);
+    if (!source) return;
+
+    source.updateMatrixWorld(true);
+    const nativeSize = new THREE.Box3().setFromObject(source).getSize(new THREE.Vector3());
+    if (nativeSize.x <= 0 || nativeSize.y <= 0 || nativeSize.z <= 0) return;
+
+    // Wall kits often author length on Z. Use the long horizontal axis as the run,
+    // otherwise tiling stands each slab on its thin edge like dominos.
+    const nativeLength = Math.max(nativeSize.x, nativeSize.z);
+    const nativeThickness = Math.min(nativeSize.x, nativeSize.z);
+    const targetSize = boundaryWall.size || [nativeLength, nativeSize.y, nativeThickness];
+    const scale = Number.isFinite(Number(boundaryWall.scale))
+      ? Number(boundaryWall.scale)
+      : wallKitScale(boundaryWall.file, nativeSize, targetSize);
+    const length = nativeLength * scale;
+    const thickness = nativeThickness * scale;
+    if (length <= 0 || thickness <= 0) return;
+    const alignLengthToX = nativeSize.z > nativeSize.x ? Math.PI / 2 : 0;
+    const mapLimit = Number(boundaryWall.limit) || 40;
+    const count = Math.ceil((mapLimit * 2) / length);
+
+    for (let index = 0; index < count; index += 1) {
+      const offset = -mapLimit + length * (index + 0.5);
+      addDesertAsset({
+        file: boundaryWall.file,
+        x: offset,
+        z: -mapLimit + thickness * 0.5,
+        scale,
+        rotationY: alignLengthToX,
+        solid: true
+      }, `boundary-north-${index}`);
+      addDesertAsset({
+        file: boundaryWall.file,
+        x: offset,
+        z: mapLimit - thickness * 0.5,
+        scale,
+        rotationY: alignLengthToX,
+        solid: true
+      }, `boundary-south-${index}`);
+      addDesertAsset({
+        file: boundaryWall.file,
+        x: -mapLimit + thickness * 0.5,
+        z: offset,
+        scale,
+        rotationY: alignLengthToX + Math.PI / 2,
+        solid: true
+      }, `boundary-west-${index}`);
+      addDesertAsset({
+        file: boundaryWall.file,
+        x: mapLimit - thickness * 0.5,
+        z: offset,
+        scale,
+        rotationY: alignLengthToX + Math.PI / 2,
+        solid: true
+      }, `boundary-east-${index}`);
+    }
+  }
+
   function build() {
     const floor = new THREE.Mesh(new THREE.PlaneGeometry(mapConfig.ground.size, mapConfig.ground.size), materials.ground);
     floor.rotation.x = -Math.PI / 2;
@@ -677,6 +853,8 @@ export async function createDesertWorldRenderer(ctx) {
     mapConfig.awnings.forEach(addAwning);
     mapConfig.palms.forEach(addPalm);
     mapConfig.pottery.forEach(addPottery);
+    (mapConfig.assets || []).forEach(addDesertAsset);
+    addBoundaryWalls();
     addDust();
 
     // Exposed roof beams make the caravanserai read as a built interior, not a box.

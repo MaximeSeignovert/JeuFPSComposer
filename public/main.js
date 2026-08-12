@@ -16,6 +16,7 @@ import { initPhysics } from "./js/physics/rapier-physics.js";
 import { createEffectsController } from "./js/render/effects.js";
 import { createMenuCameraController } from "./js/render/menu-camera.js";
 import { createDesertWorldRenderer } from "./js/render/desert-world-renderer.js";
+import { createAssetEditor } from "./js/asset-editor.js";
 import { createHudController } from "./js/ui/hud.js";
 import { createViewModel } from "./js/weapons.js";
 import { DESERT_MAP_LAYOUT } from "./js/world/desert-map-layout.js";
@@ -53,6 +54,7 @@ ctx.controllers.grenades = await createGrenadesController(ctx);
 ctx.controllers.socket = createSocketClient(ctx);
 
 ctx.controllers.world.build();
+ctx.controllers.assetEditor = createAssetEditor(ctx);
 ctx.controllers.weapons.setActiveWeaponModel(state.weapon);
 
 dom.playBtn.addEventListener("click", () => ctx.controllers.socket?.joinRoom());
@@ -142,6 +144,7 @@ ctx.controllers.socket.connect();
 ctx.physics = await initPhysics({
   mapConfig: DESERT_MAP_LAYOUT,
   mapHalfSize: MAP_HALF_SIZE,
+  worldCollisionMeshes: ctx.worldCollisionMeshes,
   playerHeight: state.playerHeight,
   gravity: GRENADE_CONFIG.gravity,
   grenadeConfig: GRENADE_CONFIG

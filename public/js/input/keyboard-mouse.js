@@ -6,6 +6,7 @@ import { resetTouchInput, shouldUsePointerLock } from "./touch-controls.js";
 
 const PAUSE_OVERLAY_CLOSE_COOLDOWN_MS = 300;
 const WEAPON_WHEEL_COOLDOWN_MS = 120;
+const MAX_LOOK_DELTA = 36;
 
 export function bindKeyboardMouseControls(options) {
   let lastWeaponWheelAt = 0;
@@ -42,13 +43,15 @@ export function bindKeyboardMouseControls(options) {
     if (state.joined) e.preventDefault();
   });
   document.addEventListener("mousemove", (e) => {
-    if (!state.joined || document.pointerLockElement !== canvas) return;
-    state.yaw -= e.movementX * 0.0025 * state.cameraSensitivity;
-    state.pitch -= e.movementY * 0.002 * state.cameraSensitivity;
+    if (!state.joined || state.editorOpen || document.pointerLockElement !== canvas) return;
+    const movementX = Math.max(-MAX_LOOK_DELTA, Math.min(MAX_LOOK_DELTA, e.movementX || 0));
+    const movementY = Math.max(-MAX_LOOK_DELTA, Math.min(MAX_LOOK_DELTA, e.movementY || 0));
+    state.yaw -= movementX * 0.0025 * state.cameraSensitivity;
+    state.pitch -= movementY * 0.002 * state.cameraSensitivity;
     state.pitch = Math.max(-1.4, Math.min(1.4, state.pitch));
   });
   document.addEventListener("pointerlockchange", () => {
-    if (!state.joined || !shouldUsePointerLock()) return;
+    if (!state.joined || state.editorOpen || !shouldUsePointerLock()) return;
     const lockedOnCanvas = document.pointerLockElement === canvas;
     if (!lockedOnCanvas && !state.pauseOpen && state.isAlive && !state.primaryFireHeld) {
       options.setPauseMenu(true);
@@ -56,23 +59,24 @@ export function bindKeyboardMouseControls(options) {
   });
 
   canvas.addEventListener("click", () => {
-    if (shouldUsePointerLock() && state.joined && !state.pauseOpen && document.pointerLockElement !== canvas) {
+    if (shouldUsePointerLock() && state.joined && !state.pauseOpen && !state.editorOpen && document.pointerLockElement !== canvas) {
       canvas.requestPointerLock();
     }
   });
   canvas.addEventListener("mousedown", (event) => {
     if (event.button !== 0) return;
+    if (state.editorOpen) return;
     options.beginPrimaryFire();
   });
   canvas.addEventListener("mousedown", (event) => {
     if (event.button !== 2) return;
-    if (!state.joined || state.pauseOpen || !state.isAlive) return;
+    if (!state.joined || state.pauseOpen || state.editorOpen || !state.isAlive) return;
     state.isAiming = true;
   });
   canvas.addEventListener(
     "wheel",
     (event) => {
-      if (!state.joined || state.pauseOpen || !state.isAlive || event.deltaY === 0) return;
+      if (!state.joined || state.pauseOpen || state.editorOpen || !state.isAlive || event.deltaY === 0) return;
       event.preventDefault();
       const now = performance.now();
       if (now - lastWeaponWheelAt < WEAPON_WHEEL_COOLDOWN_MS) return;
