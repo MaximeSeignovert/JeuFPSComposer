@@ -1,4 +1,4 @@
-import * as THREE from "https://unpkg.com/three@0.164.1/build/three.module.js";
+﻿import * as THREE from "https://unpkg.com/three@0.164.1/build/three.module.js";
 
 export function createGameContext({ dom, state, sceneSetup, viewModel, mapConfig }) {
   const { camera, renderer, scene } = sceneSetup;
@@ -15,7 +15,6 @@ export function createGameContext({ dom, state, sceneSetup, viewModel, mapConfig
     controllers: {},
     worldColliders: [],
     worldCollisionMeshes: [],
-    editableAssets: [],
     mapAnimators: [],
     grenadePickups: new Map(),
     grenadePickupMeshes: new Map(),

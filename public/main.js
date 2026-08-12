@@ -1,4 +1,4 @@
-import { GRENADE_CONFIG, MAP_HALF_SIZE } from "./js/config.js";
+﻿import { GRENADE_CONFIG, MAP_HALF_SIZE } from "./js/config.js";
 import * as dom from "./js/dom.js";
 import { createGameContext } from "./js/game/context.js";
 import { createGrenadesController } from "./js/game/grenades-controller.js";
@@ -16,7 +16,6 @@ import { initPhysics } from "./js/physics/rapier-physics.js";
 import { createEffectsController } from "./js/render/effects.js";
 import { createMenuCameraController } from "./js/render/menu-camera.js";
 import { createDesertWorldRenderer } from "./js/render/desert-world-renderer.js";
-import { createAssetEditor } from "./js/asset-editor.js";
 import { createHudController } from "./js/ui/hud.js";
 import { createViewModel } from "./js/weapons.js";
 import { DESERT_MAP_LAYOUT } from "./js/world/desert-map-layout.js";
@@ -54,7 +53,6 @@ ctx.controllers.grenades = await createGrenadesController(ctx);
 ctx.controllers.socket = createSocketClient(ctx);
 
 ctx.controllers.world.build();
-ctx.controllers.assetEditor = createAssetEditor(ctx);
 ctx.controllers.weapons.setActiveWeaponModel(state.weapon);
 
 dom.playBtn.addEventListener("click", () => ctx.controllers.socket?.joinRoom());

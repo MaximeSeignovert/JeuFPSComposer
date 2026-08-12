@@ -717,7 +717,7 @@ export async function createDesertWorldRenderer(ctx) {
     });
   }
 
-  function addDesertAsset(assetConfig, assetIndex) {
+  function addDesertAsset(assetConfig) {
     const { file, x, y = 0, z, size, scale, rotationY = 0, solid = false, building = false } = assetConfig;
     const source = desertAssets.get(file);
     if (!source) return;
@@ -738,10 +738,6 @@ export async function createDesertWorldRenderer(ctx) {
     asset.updateMatrixWorld(true);
     const bounds = new THREE.Box3().setFromObject(asset);
     asset.position.set(x, y - bounds.min.y, z);
-    asset.userData.editableAsset = true;
-    asset.userData.assetConfig = assetConfig;
-    asset.userData.assetIndex = assetIndex;
-    ctx.editableAssets.push(asset);
     scene.add(asset);
 
     if (!solid) return;
@@ -808,7 +804,7 @@ export async function createDesertWorldRenderer(ctx) {
         scale,
         rotationY: alignLengthToX,
         solid: true
-      }, `boundary-north-${index}`);
+      });
       addDesertAsset({
         file: boundaryWall.file,
         x: offset,
@@ -816,7 +812,7 @@ export async function createDesertWorldRenderer(ctx) {
         scale,
         rotationY: alignLengthToX,
         solid: true
-      }, `boundary-south-${index}`);
+      });
       addDesertAsset({
         file: boundaryWall.file,
         x: -mapLimit + thickness * 0.5,
@@ -824,7 +820,7 @@ export async function createDesertWorldRenderer(ctx) {
         scale,
         rotationY: alignLengthToX + Math.PI / 2,
         solid: true
-      }, `boundary-west-${index}`);
+      });
       addDesertAsset({
         file: boundaryWall.file,
         x: mapLimit - thickness * 0.5,
@@ -832,7 +828,7 @@ export async function createDesertWorldRenderer(ctx) {
         scale,
         rotationY: alignLengthToX + Math.PI / 2,
         solid: true
-      }, `boundary-east-${index}`);
+      });
     }
   }
 

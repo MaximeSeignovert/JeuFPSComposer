@@ -1,4 +1,4 @@
-import * as THREE from "https://unpkg.com/three@0.164.1/build/three.module.js";
+﻿import * as THREE from "https://unpkg.com/three@0.164.1/build/three.module.js";
 import { KNIFE_MOVE_SPEED_MULTIPLIER, MAP_HALF_SIZE } from "../config.js";
 import { keyBindings } from "../input/keybinding-ui.js";
 
@@ -29,7 +29,7 @@ export function createPlayerController(ctx) {
   }
 
   function updateMovement(delta) {
-    if (!ctx.physics || !state.joined || state.pauseOpen || state.editorOpen || !state.isAlive) {
+    if (!ctx.physics || !state.joined || state.pauseOpen || !state.isAlive) {
       ctx.smoothedMoveVelocity.set(0, 0, 0);
       return;
     }

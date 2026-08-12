@@ -1,4 +1,4 @@
----
+﻿---
 name: sync-desert-map
 description: Keeps the Qasr Al-Rih desert map consistent across layout, renderer, Rapier collisions, grenade/spawn points, and bot navigation. Use when moving buildings, adding FBX props, changing MAP_HALF_SIZE, editing desert-map-layout.js, desert-world-renderer.js, rapier-physics.js, FpsRoom spawn/pickup points, or the development bot pathfinding.
 ---
@@ -26,10 +26,6 @@ Un changement visuel sans les autres couches casse collisions, hitscan, pickups 
 4. Mettre à jour `DESERT_NAVIGATION` (waypoints au sol, liens non obstrués) et `DESERT_BLOCKING_VOLUMES` (murs au sol, pas toits).
 5. Lancer `npm test`.
 6. Vérifier à la main : marcher autour du prop, tirer à travers, bot qui ne traverse pas le bâtiment.
-
-## Éditeur localhost
-
-F2 ouvre l'éditeur. « Copy selected config » produit un snippet à coller dans le layout. Rafraîchir ensuite : Rapier lit le layout, pas le gizmo live.
 
 ## Ne pas faire
 

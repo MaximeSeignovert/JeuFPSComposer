@@ -1,4 +1,4 @@
-# Contexte projet - JeuFPSComposer
+﻿# Contexte projet - JeuFPSComposer
 
 Briefing détaillé. Index court : `AGENTS.md`.
 
@@ -18,8 +18,7 @@ Fonctionnalités live :
 - HUD vie / munitions / slots d'armes ;
 - contrôles AZERTY configurables + tactile mobile ;
 - map désert Qasr Al-Rih (kit FBX) ;
-- bot de développement hors production ;
-- éditeur d'assets localhost (F2).
+- bot de développement hors production.
 
 ## Stack
 
@@ -83,7 +82,6 @@ Le serveur sert `public/` en statique. `public/main.js` importe des modules rela
 - `render/effects.js` — impacts, tracers, muzzle, explosions, overlays
 - `render/menu-camera.js` — caméra menu tant que non joined
 - `weapons.js` — view model 1P
-- `asset-editor.js` — gizmo localhost, copie de config
 
 Ancienne map **non branchée** : `world/map-layout.js`, `render/world-renderer.js`.
 
@@ -152,5 +150,4 @@ Map : `buildingScale`, `boundaryWall` (limit 40), assets FBX `solid` pour collis
 - Toute évolution réseau : `FpsRoom` + `socket-client.js`.
 - Constantes souvent dupliquées client/serveur : les aligner.
 - Ne pas casser `/vendor/rapier/rapier.mjs` ni `/vendor/game-net.js`.
-- L'éditeur F2 ne met pas à jour Rapier tant que le layout n'est pas recollé.
 - Le bot fausse les tests manuels locaux si `NODE_ENV` n'est pas `production`.
