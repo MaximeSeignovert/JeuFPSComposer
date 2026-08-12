@@ -41,6 +41,8 @@
   deathKillerName: "",
   deathKillerWeapon: "",
   joined: false,
+  joining: false,
+  roomJoinable: false,
   pauseOpen: false,
   pauseOpenedAt: 0,
   showFps: false,

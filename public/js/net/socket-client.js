@@ -19,13 +19,19 @@ export function createSocketClient(ctx) {
     return true;
   }
 
+  let roomsRetryTimer = 0;
+
   async function refreshRooms() {
+    window.clearTimeout(roomsRetryTimer);
     try {
       const response = await fetch("/api/rooms", { cache: "no-store" });
+      if (!response.ok) throw new Error("rooms");
       const payload = await response.json();
       ctx.controllers.hud.renderRooms(Array.isArray(payload.rooms) ? payload.rooms : []);
     } catch {
+      state.roomJoinable = false;
       ctx.controllers.hud.showRoomError("Impossible de charger les rooms");
+      roomsRetryTimer = window.setTimeout(refreshRooms, 2500);
     }
   }
 
@@ -198,7 +204,7 @@ export function createSocketClient(ctx) {
   }
 
   async function joinRoom() {
-    if (!client) return;
+    if (!client || state.joined || state.joining || !ctx.physics || !state.roomJoinable) return;
     ctx.controllers.hud.setPlayLoading(true);
     savePlayerName(nameInput.value);
     const name = sanitizePlayerName(nameInput.value);

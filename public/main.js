@@ -59,6 +59,7 @@ dom.playBtn.addEventListener("click", () => ctx.controllers.socket?.joinRoom());
 dom.nameInput.addEventListener("keydown", (event) => {
   if (event.key !== "Enter") return;
   event.preventDefault();
+  if (!ctx.controllers.hud?.canJoinGame()) return;
   ctx.controllers.socket?.joinRoom();
 });
 
@@ -147,6 +148,7 @@ ctx.physics = await initPhysics({
   gravity: GRENADE_CONFIG.gravity,
   grenadeConfig: GRENADE_CONFIG
 });
+ctx.controllers.hud.syncPlayButton();
 
 const initialCameraPosition = ctx.physics.getPlayerCameraPosition();
 ctx.camera.position.set(initialCameraPosition.x, initialCameraPosition.y, initialCameraPosition.z);

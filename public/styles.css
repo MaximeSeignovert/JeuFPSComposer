@@ -2144,7 +2144,19 @@ button.active, .weapon-card.active { border-color: #fff; background: rgba(255, 2
 }
 
 .play-button:hover::before { transform: translateX(120%); }
-.play-button:disabled { cursor: wait; opacity: 0.62; transform: none; }
+.play-button:disabled,
+.play-button:disabled:hover {
+    cursor: not-allowed;
+    opacity: 0.62;
+    transform: none;
+    border-color: var(--menu-accent);
+    background: var(--menu-accent);
+    box-shadow: 0 14px 30px rgba(200, 243, 106, 0.13);
+    color: #111711;
+}
+.play-button:disabled:hover::before { transform: translateX(-120%); }
+.play-button:disabled.is-loading,
+.play-button:disabled.is-loading:hover { cursor: wait; }
 .play-button.is-loading .play-button__arrow { animation: play-arrow-pulse 900ms ease-in-out infinite; }
 
 .play-button__number {

@@ -363,25 +363,42 @@ export function createHudController(ctx) {
     window.setTimeout(() => item.remove(), 3000);
   }
 
+  function canJoinGame() {
+    return Boolean(ctx.physics) && state.roomJoinable && !state.joining && !state.joined;
+  }
+
+  function syncPlayButton() {
+    if (!playBtn) return;
+    const loadingWorld = !ctx.physics;
+    const joining = state.joining;
+    playBtn.disabled = !canJoinGame();
+    playBtn.classList.toggle("is-loading", joining || loadingWorld);
+    const label = playBtn.querySelector(".play-button__label");
+    if (!label) return;
+    if (joining) label.textContent = "Connexion…";
+    else if (loadingWorld) label.textContent = "Chargement…";
+    else label.textContent = "Jouer";
+  }
+
   function renderRooms(rooms) {
     const room = Array.isArray(rooms) ? rooms[0] : null;
-    if (!serverStatusText || !serverStatusCount) return;
     if (!room) {
-      serverStatusText.textContent = "Arène indisponible";
-      serverStatusCount.textContent = "— / 10";
+      state.roomJoinable = false;
+      if (serverStatusText) serverStatusText.textContent = "Arène indisponible";
+      if (serverStatusCount) serverStatusCount.textContent = "— / 10";
+      syncPlayButton();
       return;
     }
     const isFull = Number(room.count) >= Number(room.max);
-    serverStatusText.textContent = isFull ? "Arène complète" : "Serveur en ligne";
-    serverStatusCount.textContent = `${room.count} / ${room.max}`;
-    playBtn?.toggleAttribute("disabled", isFull);
+    state.roomJoinable = !isFull;
+    if (serverStatusText) serverStatusText.textContent = isFull ? "Arène complète" : "Serveur en ligne";
+    if (serverStatusCount) serverStatusCount.textContent = `${room.count} / ${room.max}`;
+    syncPlayButton();
   }
 
   function setPlayLoading(loading) {
-    if (!playBtn) return;
-    playBtn.disabled = Boolean(loading);
-    playBtn.classList.toggle("is-loading", Boolean(loading));
-    playBtn.querySelector(".play-button__label").textContent = loading ? "Connexion…" : "Jouer";
+    state.joining = Boolean(loading);
+    syncPlayButton();
   }
 
   function enterGame() {
@@ -486,12 +503,15 @@ export function createHudController(ctx) {
 
   setFpsEnabled(readShowFpsPreference(), { persist: false });
   fpsToggle?.addEventListener("change", () => setFpsEnabled(fpsToggle.checked));
+  syncPlayButton();
 
   return {
     addKillFeedEntry,
     enterGame,
+    canJoinGame,
     renderRooms,
     setPlayLoading,
+    syncPlayButton,
     setLocalAlive,
     setPauseMenu,
     showRoomError,
