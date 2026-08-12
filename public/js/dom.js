@@ -17,6 +17,7 @@ export const killFeed = document.getElementById("killFeed");
 export const crosshair = document.getElementById("crosshair");
 export const weaponShotLoader = document.getElementById("weaponShotLoader");
 export const damageOverlay = document.getElementById("damageOverlay");
+export const hitDirection = document.getElementById("hitDirection");
 export const hitmarker = document.getElementById("hitmarker");
 export const killConfirmation = document.getElementById("killConfirmation");
 export const sniperScope = document.getElementById("sniperScope");

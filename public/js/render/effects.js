@@ -1,8 +1,22 @@
 import * as THREE from "https://unpkg.com/three@0.164.1/build/three.module.js";
 
+const HIT_DIRECTION_DURATION = 1.65;
+const HIT_DIRECTION_MAX_MARKS = 6;
+const HIT_DIRECTION_MIN_DISTANCE_SQ = 0.12;
+
+function readVec3(value) {
+  if (!value || typeof value !== "object") return null;
+  const x = Number(value.x);
+  const y = Number(value.y);
+  const z = Number(value.z);
+  if (![x, y, z].every(Number.isFinite)) return null;
+  return { x, y, z };
+}
+
 export function createEffectsController(ctx) {
   const { camera, scene, state } = ctx;
-  const { damageOverlay, hitmarker, killConfirmation } = ctx.dom;
+  const { damageOverlay, hitDirection, hitmarker, killConfirmation } = ctx.dom;
+  const hitDirectionIndicators = [];
 
   function triggerHitmarker() {
     if (!hitmarker) return;
@@ -42,6 +56,111 @@ export function createEffectsController(ctx) {
       damageOverlay.style.opacity = "";
       damageOverlay.classList.add("hidden");
     }, 220);
+  }
+
+  function createHitDirectionMark() {
+    const mark = document.createElement("div");
+    mark.className = "hit-direction__mark";
+    const arrow = document.createElement("div");
+    arrow.className = "hit-direction__arrow";
+    mark.append(arrow);
+    hitDirection?.append(mark);
+    return mark;
+  }
+
+  function removeHitDirectionMark(indicator) {
+    indicator.element?.remove();
+    const index = hitDirectionIndicators.indexOf(indicator);
+    if (index >= 0) hitDirectionIndicators.splice(index, 1);
+  }
+
+  function clearHitDirection() {
+    while (hitDirectionIndicators.length) {
+      removeHitDirectionMark(hitDirectionIndicators[0]);
+    }
+    hitDirection?.classList.add("hidden");
+  }
+
+  function resolveHitSourcePosition(indicator) {
+    if (indicator.attackerId) {
+      const remote = ctx.remoteMeshes.get(indicator.attackerId);
+      const live = remote?.root?.position;
+      if (live && Number.isFinite(live.x) && Number.isFinite(live.z)) {
+        return live;
+      }
+    }
+    return indicator.sourcePosition;
+  }
+
+  function getHitDirectionDegrees(sourcePosition) {
+    if (!sourcePosition) return null;
+    const dx = sourcePosition.x - camera.position.x;
+    const dz = sourcePosition.z - camera.position.z;
+    if (dx * dx + dz * dz < HIT_DIRECTION_MIN_DISTANCE_SQ) return null;
+
+    const sinY = Math.sin(state.yaw);
+    const cosY = Math.cos(state.yaw);
+    const forward = dx * -sinY + dz * -cosY;
+    const right = dx * cosY + dz * -sinY;
+    return THREE.MathUtils.radToDeg(Math.atan2(right, forward));
+  }
+
+  function triggerHitDirection({ attackerId, sourcePosition, damageAmount } = {}) {
+    if (!hitDirection || !state.isAlive) return;
+    const id = attackerId ? String(attackerId) : "";
+    const position = readVec3(sourcePosition);
+    if (!id && !position) return;
+
+    const intensity = THREE.MathUtils.clamp((Number(damageAmount) || 0) / 45, 0.45, 1);
+    let indicator = id
+      ? hitDirectionIndicators.find((entry) => entry.attackerId === id)
+      : null;
+
+    if (!indicator) {
+      if (hitDirectionIndicators.length >= HIT_DIRECTION_MAX_MARKS) {
+        removeHitDirectionMark(hitDirectionIndicators[0]);
+      }
+      indicator = {
+        attackerId: id || null,
+        sourcePosition: position,
+        life: HIT_DIRECTION_DURATION,
+        intensity,
+        element: createHitDirectionMark()
+      };
+      hitDirectionIndicators.push(indicator);
+    } else {
+      indicator.sourcePosition = position || indicator.sourcePosition;
+      indicator.life = HIT_DIRECTION_DURATION;
+      indicator.intensity = Math.max(indicator.intensity, intensity);
+    }
+
+    hitDirection.classList.remove("hidden");
+    updateHitDirection(0);
+  }
+
+  function updateHitDirection(delta) {
+    if (!hitDirection) return;
+    if (!state.joined || !state.isAlive) {
+      if (hitDirectionIndicators.length) clearHitDirection();
+      return;
+    }
+
+    for (let i = hitDirectionIndicators.length - 1; i >= 0; i -= 1) {
+      const indicator = hitDirectionIndicators[i];
+      indicator.life -= delta;
+      if (indicator.life <= 0) {
+        removeHitDirectionMark(indicator);
+        continue;
+      }
+
+      const fade = THREE.MathUtils.clamp(indicator.life / (HIT_DIRECTION_DURATION * 0.55), 0, 1);
+      const opacity = indicator.intensity * fade;
+      const angle = getHitDirectionDegrees(resolveHitSourcePosition(indicator)) || 0;
+      indicator.element.style.opacity = String(opacity);
+      indicator.element.style.transform = `rotate(${angle.toFixed(1)}deg)`;
+    }
+
+    hitDirection.classList.toggle("hidden", hitDirectionIndicators.length === 0);
   }
 
   function spawnBulletVisual(origin, direction, localShot, bulletSpeed, maxTravelDistance = 120) {
@@ -275,6 +394,7 @@ export function createEffectsController(ctx) {
     updateBullets(delta);
     updateFlashes(delta);
     updateImpacts(delta);
+    updateHitDirection(delta);
     updateDeathCamera(delta);
   }
 
@@ -284,6 +404,7 @@ export function createEffectsController(ctx) {
     traceImpact,
     traceMeleeSweep,
     triggerDamageOverlay,
+    triggerHitDirection,
     triggerHitmarker,
     triggerKillConfirmation,
     update

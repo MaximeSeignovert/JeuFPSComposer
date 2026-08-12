@@ -941,6 +941,37 @@ button.active {
     opacity: 1;
 }
 
+.hit-direction {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 0;
+    height: 0;
+    z-index: 4;
+    pointer-events: none;
+}
+
+.hit-direction__mark {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 0;
+    height: 0;
+}
+
+.hit-direction__arrow {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 22px;
+    height: 16px;
+    margin-left: -11px;
+    margin-top: -118px;
+    background: #ff3b2f;
+    clip-path: polygon(50% 0, 100% 100%, 0 100%);
+    filter: drop-shadow(0 0 6px rgba(255, 40, 30, 0.85));
+}
+
 .hitmarker {
     position: absolute;
     left: 50%;

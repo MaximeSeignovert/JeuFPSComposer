@@ -118,7 +118,14 @@ export function createSocketClient(ctx) {
       const previousHealth = state.health;
       state.health = Number(msg.health) || 0;
       const damageTaken = Math.max(0, previousHealth - state.health);
-      if (damageTaken > 0) ctx.controllers.effects.triggerDamageOverlay(damageTaken);
+      if (damageTaken > 0) {
+        ctx.controllers.effects.triggerDamageOverlay(damageTaken);
+        ctx.controllers.effects.triggerHitDirection({
+          attackerId: msg.attackerId,
+          sourcePosition: msg.sourcePosition,
+          damageAmount: damageTaken
+        });
+      }
       ctx.controllers.hud.updateHealth();
       return;
     }

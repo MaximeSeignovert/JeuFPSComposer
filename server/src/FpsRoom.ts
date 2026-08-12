@@ -446,7 +446,7 @@ export class FpsRoom extends Room<{ state: FpsState }> {
       if (isKnifeHit && !this.isInsideKnifeSweep(attacker, target.position)) return;
 
       target.health = Math.max(0, target.health - damage);
-      this.sendHealth(target);
+      this.sendHealth(target, { attackerId: attacker.id, position: attacker.position });
       if (target.health > 0) {
         this.sendRoomPlayers();
         return;
@@ -498,7 +498,7 @@ export class FpsRoom extends Room<{ state: FpsState }> {
 
       target.health = Math.max(0, target.health - damage);
       damagedSomeone = true;
-      this.sendHealth(target);
+      this.sendHealth(target, { position });
       if (target.health <= 0) victimsToKill.push(target);
     });
 
@@ -710,7 +710,7 @@ export class FpsRoom extends Room<{ state: FpsState }> {
     const runtime = this.getRuntime(victim.id);
     if (now < (runtime?.invulnerableUntil || 0)) return;
     victim.health = Math.max(0, victim.health - DEV_BOT_DAMAGE);
-    this.sendHealth(victim);
+    this.sendHealth(victim, { attackerId: bot.id, position: bot.position });
     if (victim.health > 0) {
       this.sendRoomPlayers();
       return;
@@ -758,8 +758,26 @@ export class FpsRoom extends Room<{ state: FpsState }> {
     }, RESPAWN_DELAY_MS);
   }
 
-  private sendHealth(player: PlayerState) {
-    this.getClientById(player.id)?.send("player:health", { health: player.health });
+  private sendHealth(player: PlayerState, source?: { attackerId?: string; position?: Vec3Like }) {
+    const payload: {
+      health: number;
+      attackerId?: string;
+      sourcePosition?: Vec3Like;
+    } = { health: player.health };
+
+    const attackerId = String(source?.attackerId || "");
+    if (attackerId) payload.attackerId = attackerId;
+
+    const position = source?.position;
+    if (position && Number.isFinite(Number(position.x)) && Number.isFinite(Number(position.z))) {
+      payload.sourcePosition = {
+        x: Number(position.x) || 0,
+        y: Number(position.y) || 0,
+        z: Number(position.z) || 0
+      };
+    }
+
+    this.getClientById(player.id)?.send("player:health", payload);
   }
 
   private sendGrenadeInventory(client: Client | null, player: PlayerState) {
