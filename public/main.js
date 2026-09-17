@@ -2,6 +2,7 @@
 import * as dom from "./js/dom.js";
 import { createGameContext } from "./js/game/context.js";
 import { createGrenadesController } from "./js/game/grenades-controller.js";
+import { createGrappleController } from "./js/game/grapple-controller.js";
 import { createPlayerController } from "./js/game/player-controller.js";
 import { createRemotePlayersController } from "./js/game/remote-players.js";
 import { createWeaponsController } from "./js/game/weapons-controller.js";
@@ -48,6 +49,7 @@ ctx.controllers.sound = createSoundController(ctx);
 ctx.controllers.remotePlayers = await createRemotePlayersController(ctx);
 ctx.controllers.weapons = createWeaponsController(ctx);
 ctx.controllers.hud = createHudController(ctx);
+ctx.controllers.grapple = createGrappleController(ctx);
 ctx.controllers.player = createPlayerController(ctx);
 ctx.controllers.grenades = await createGrenadesController(ctx);
 ctx.controllers.socket = createSocketClient(ctx);
@@ -106,9 +108,11 @@ bindTouchControls({
 });
 
 bindKeyboardMouseControls({
+  beginGrapple: ctx.controllers.grapple.begin,
   beginPrimaryFire: ctx.controllers.weapons.beginPrimaryFire,
   cancelPrimaryFire: ctx.controllers.weapons.cancelPrimaryFire,
   cycleWeaponSlot: ctx.controllers.weapons.cycleWeaponSlot,
+  endGrapple: ctx.controllers.grapple.end,
   endPrimaryFire: ctx.controllers.weapons.endPrimaryFire,
   endPrimaryFireFromMouseEvent: ctx.controllers.weapons.endPrimaryFireFromMouseEvent,
   equipGrenade: ctx.controllers.weapons.equipGrenade,
@@ -127,6 +131,7 @@ function animate() {
   ctx.controllers.hud.updateFrame(delta);
   ctx.camera.rotation.set(state.pitch, state.yaw, 0, "YXZ");
   ctx.controllers.player.update(delta);
+  ctx.controllers.grapple.update(delta);
   ctx.controllers.weapons.update(delta);
   ctx.controllers.remotePlayers.update(delta, time);
   ctx.controllers.effects.update(delta);

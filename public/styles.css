@@ -2602,3 +2602,8 @@ button.active, .weapon-card.active { border-color: #fff; background: rgba(255, 2
     color: var(--muted);
     text-align: center;
 }
+
+/* Réticule atténué pendant le cooldown du grappin. */
+.crosshair--grapple-cooldown {
+    opacity: 0.3;
+}

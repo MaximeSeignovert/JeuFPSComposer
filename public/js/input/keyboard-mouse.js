@@ -25,6 +25,13 @@ export function bindKeyboardMouseControls(options) {
       }
       return;
     }
+    if (pressedKey === keyBindings.grapple) {
+      if (state.joined && !state.pauseOpen && state.isAlive) {
+        e.preventDefault();
+        if (!e.repeat) options.beginGrapple?.();
+      }
+      return;
+    }
     if (pressedKey === keyBindings.grenade) {
       if (state.joined && !state.pauseOpen && state.isAlive) {
         e.preventDefault();
@@ -49,6 +56,7 @@ export function bindKeyboardMouseControls(options) {
     const releasedKey = getKeyBindingFromEvent(e);
     state.keys.delete(releasedKey);
     if (releasedKey === "Tab") options.setScoreboardVisible?.(false);
+    if (releasedKey === keyBindings.grapple) options.endGrapple?.();
   });
   document.addEventListener("contextmenu", (e) => {
     if (state.joined) e.preventDefault();
@@ -104,6 +112,7 @@ export function bindKeyboardMouseControls(options) {
   });
   window.addEventListener("blur", () => {
     options.cancelPrimaryFire();
+    options.endGrapple?.();
     state.isAiming = false;
     resetTouchInput();
     options.setScoreboardVisible?.(false);

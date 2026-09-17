@@ -33,6 +33,27 @@ export function createPlayerController(ctx) {
       ctx.smoothedMoveVelocity.set(0, 0, 0);
       return;
     }
+
+    const grapplePull = ctx.controllers.grapple?.getPullVelocity();
+    if (grapplePull) {
+      ctx.smoothedMoveVelocity.set(grapplePull.x, 0, grapplePull.z);
+      state.verticalVelocity = grapplePull.y;
+      const grappleResult = ctx.physics.movePlayer({
+        horizontalVelocity: ctx.smoothedMoveVelocity,
+        verticalVelocity: state.verticalVelocity,
+        delta
+      });
+      camera.position.set(
+        grappleResult.cameraPosition.x,
+        grappleResult.cameraPosition.y,
+        grappleResult.cameraPosition.z
+      );
+      if (grappleResult.grounded) state.verticalVelocity = 0;
+      state.onGround = grappleResult.grounded;
+      state.movementBlend = THREE.MathUtils.lerp(state.movementBlend, 1, Math.min(delta * 12, 1));
+      return;
+    }
+
     const kb = keyBindings;
     const keyboardFwd = Number(state.keys.has(kb.forward)) - Number(state.keys.has(kb.back));
     const keyboardRight = Number(state.keys.has(kb.right)) - Number(state.keys.has(kb.left));

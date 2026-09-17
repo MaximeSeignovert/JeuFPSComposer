@@ -14,6 +14,7 @@ export const DEFAULT_KEY_BINDINGS = {
   sprint: "ShiftLeft",
   jump: "Space",
   grenade: "g",
+  grapple: "f",
   reload: "r",
   pause: "Escape"
 };
@@ -26,6 +27,7 @@ export const KEY_BINDING_ROWS = [
   { id: "sprint", label: "Sprint" },
   { id: "jump", label: "Sauter" },
   { id: "grenade", label: "Grenade" },
+  { id: "grapple", label: "Grappin" },
   { id: "reload", label: "Recharger" },
   { id: "pause", label: "Pause / menu" }
 ];
@@ -121,4 +123,12 @@ export const GRENADE_CONFIG = {
   friction: 0.84,
   minVerticalBounce: 1.4,
   minHorizontalSpeed: 0.2
+};
+
+export const GRAPPLE_CONFIG = {
+  range: 45,
+  pullSpeed: 17,
+  minDistance: 1.8,
+  surfaceOffset: 0.3,
+  cooldownMs: 3000
 };
