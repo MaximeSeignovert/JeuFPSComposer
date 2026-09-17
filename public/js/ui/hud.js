@@ -11,6 +11,12 @@ const SHOW_FPS_STORAGE_KEY = "fps.showFps";
 const FPS_UPDATE_INTERVAL = 0.5;
 const SCOREBOARD_MIN_INTERVAL_MS = 200;
 
+const HTML_ESCAPES = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (char) => HTML_ESCAPES[char]);
+}
+
 export function createHudController(ctx) {
   const { camera, state } = ctx;
   const {
@@ -41,6 +47,9 @@ export function createHudController(ctx) {
     playerList,
     playBtn,
     respawnNotice,
+    scoreboardOverlay,
+    scoreboardOverlayBody,
+    scoreboardOverlayCount,
     serverStatusCount,
     serverStatusText,
     sniperScope,
@@ -56,6 +65,8 @@ export function createHudController(ctx) {
   let lastScoreboardRenderAt = 0;
   let pendingScoreboardPlayers = null;
   let scoreboardRenderTimer = null;
+  let scoreboardVisible = false;
+  let latestPlayers = [];
   let fpsFrameCount = 0;
   let fpsElapsed = 0;
 
@@ -429,6 +440,7 @@ export function createHudController(ctx) {
     if (!state.joined) return;
     state.pauseOpen = open;
     if (open) state.pauseOpenedAt = performance.now();
+    if (open) setScoreboardVisible(false);
     cancelKeyRebind();
     pauseMenuOverlay.classList.toggle("hidden", !open);
     crosshair.classList.toggle("hidden", open);
@@ -448,6 +460,7 @@ export function createHudController(ctx) {
   }
 
   function showRoomError(message) {
+    setScoreboardVisible(false);
     setPlayLoading(false);
     if (serverStatusText) serverStatusText.textContent = message || "Action impossible";
     respawnNotice.textContent = message || "Action impossible";
@@ -464,7 +477,51 @@ export function createHudController(ctx) {
     updateWeaponSwitch();
   }
 
+  function scoreboardItemsHtml(players) {
+    const scoreboard = [...players].sort((a, b) => {
+      const killDiff = (Number(b.kills) || 0) - (Number(a.kills) || 0);
+      if (killDiff !== 0) return killDiff;
+      const deathDiff = (Number(a.deaths) || 0) - (Number(b.deaths) || 0);
+      if (deathDiff !== 0) return deathDiff;
+      return String(a.name || "").localeCompare(String(b.name || ""));
+    });
+
+    return scoreboard
+      .map((p, idx) => {
+        const life = p.alive === false ? "MORT" : `${Math.max(0, Number(p.health) || 0)}PV`;
+        const isMe = p.id === state.playerId;
+        return `<li class="${isMe ? "me" : ""}">
+          <span class="rank">#${idx + 1}</span>
+          <span class="name">${escapeHtml(p.name)}${isMe ? " (Toi)" : ""}</span>
+          <span class="kd">${Number(p.kills) || 0}/${Number(p.deaths) || 0}</span>
+          <span class="life">${life}</span>
+        </li>`;
+      })
+      .join("");
+  }
+
+  function renderScoreboardOverlay() {
+    if (!scoreboardOverlayBody) return;
+    if (scoreboardOverlayCount) scoreboardOverlayCount.textContent = `${latestPlayers.length} / 10`;
+    scoreboardOverlayBody.innerHTML = latestPlayers.length
+      ? `<ul class="scoreboard-list">${scoreboardItemsHtml(latestPlayers)}</ul>`
+      : `<p class="scoreboard-overlay__empty">Aucun joueur</p>`;
+  }
+
+  function setScoreboardVisible(visible) {
+    const show = Boolean(visible) && state.joined && !state.pauseOpen;
+    if (show === scoreboardVisible) return;
+    scoreboardVisible = show;
+    if (!scoreboardOverlay) return;
+    scoreboardOverlay.classList.toggle("hidden", !show);
+    scoreboardOverlay.setAttribute("aria-hidden", show ? "false" : "true");
+    if (show) renderScoreboardOverlay();
+  }
+
   function renderScoreboard(players) {
+    latestPlayers = players;
+    if (scoreboardVisible) renderScoreboardOverlay();
+
     // `room:players` arrive à chaque touche non létale : reconstruire tout le
     // DOM à ce rythme pesait lourd. On limite à 5 reconstructions/s, avec un
     // rendu différé pour ne jamais rester bloqué sur un état périmé.
@@ -494,30 +551,9 @@ export function createHudController(ctx) {
     pendingScoreboardPlayers = null;
     renderedScoreboardSignature = signature;
     lastScoreboardRenderAt = performance.now();
-
-    const scoreboard = [...players].sort((a, b) => {
-      const killDiff = (Number(b.kills) || 0) - (Number(a.kills) || 0);
-      if (killDiff !== 0) return killDiff;
-      const deathDiff = (Number(a.deaths) || 0) - (Number(b.deaths) || 0);
-      if (deathDiff !== 0) return deathDiff;
-      return String(a.name || "").localeCompare(String(b.name || ""));
-    });
-
-    const html = scoreboard
-      .map((p, idx) => {
-        const life = p.alive === false ? "MORT" : `${Math.max(0, Number(p.health) || 0)}PV`;
-        const isMe = p.id === state.playerId;
-        return `<li class="${isMe ? "me" : ""}">
-          <span class="rank">#${idx + 1}</span>
-          <span class="name">${p.name}${isMe ? " (Toi)" : ""}</span>
-          <span class="kd">${Number(p.kills) || 0}/${Number(p.deaths) || 0}</span>
-          <span class="life">${life}</span>
-        </li>`;
-      })
-      .join("");
     playerList.innerHTML = `
       <strong>Scoreboard FFA (${players.length}/10)</strong>
-      <ul class="scoreboard-list">${html}</ul>
+      <ul class="scoreboard-list">${scoreboardItemsHtml(players)}</ul>
     `;
   }
 
@@ -554,6 +590,7 @@ export function createHudController(ctx) {
     syncPlayButton,
     setLocalAlive,
     setPauseMenu,
+    setScoreboardVisible,
     showRoomError,
     syncWeaponChoice,
     togglePauseMenu,

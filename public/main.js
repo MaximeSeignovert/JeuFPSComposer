@@ -115,6 +115,7 @@ bindKeyboardMouseControls({
   jump: ctx.controllers.player.jump,
   reloadWeapon: ctx.controllers.weapons.reloadWeapon,
   setPauseMenu: ctx.controllers.hud.setPauseMenu,
+  setScoreboardVisible: ctx.controllers.hud.setScoreboardVisible,
   togglePauseMenu: ctx.controllers.hud.togglePauseMenu
 });
 

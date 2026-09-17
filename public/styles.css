@@ -2513,3 +2513,92 @@ button.active, .weapon-card.active { border-color: #fff; background: rgba(255, 2
         width: 70px;
     }
 }
+
+/* Scoreboard plein écran, affiché tant que Tab est maintenu. */
+.scoreboard-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 8;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: max(24px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-right))
+        max(24px, env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left));
+    background: rgba(0, 0, 0, 0.62);
+    backdrop-filter: blur(6px);
+}
+
+.scoreboard-overlay.hidden {
+    display: none;
+}
+
+.scoreboard-overlay__panel {
+    width: min(94vw, 780px);
+    max-height: 86vh;
+    overflow: auto;
+    padding: 22px 26px 26px;
+    border: 1px solid var(--stroke);
+    background: rgba(10, 10, 10, 0.82);
+    box-shadow: 0 28px 70px rgba(0, 0, 0, 0.55);
+}
+
+.scoreboard-overlay__header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.scoreboard-overlay__header h2 {
+    margin: 0;
+    font-size: 24px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+}
+
+.scoreboard-overlay__header span {
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.scoreboard-overlay__columns,
+.scoreboard-overlay .scoreboard-list li {
+    display: grid;
+    grid-template-columns: 56px minmax(0, 1fr) 96px 96px;
+    gap: 12px;
+    align-items: center;
+}
+
+.scoreboard-overlay__columns {
+    padding: 0 14px 8px;
+    border-bottom: 1px solid var(--stroke);
+    color: var(--muted);
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.scoreboard-overlay .scoreboard-list {
+    margin: 10px 0 0;
+    gap: 6px;
+}
+
+.scoreboard-overlay .scoreboard-list li {
+    padding: 12px 14px;
+    font-size: 17px;
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.scoreboard-overlay .scoreboard-list .kd,
+.scoreboard-overlay .scoreboard-list .life {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.scoreboard-overlay__empty {
+    margin: 18px 0 0;
+    color: var(--muted);
+    text-align: center;
+}

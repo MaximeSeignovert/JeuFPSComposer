@@ -360,6 +360,21 @@
         <div class="scope-crosshair"></div>
       </section>
       <section id="playerList" class="player-list hidden"></section>
+      <section id="scoreboardOverlay" class="scoreboard-overlay hidden" aria-hidden="true">
+        <div class="scoreboard-overlay__panel">
+          <header class="scoreboard-overlay__header">
+            <h2>Classement FFA</h2>
+            <span id="scoreboardOverlayCount">0 / 10</span>
+          </header>
+          <div class="scoreboard-overlay__columns" aria-hidden="true">
+            <span>#</span>
+            <span>Joueur</span>
+            <span>K/D</span>
+            <span>Vie</span>
+          </div>
+          <div id="scoreboardOverlayBody" class="scoreboard-overlay__body"></div>
+        </div>
+      </section>
       <section id="touchControls" class="touch-controls hidden" aria-label="Contrôles tactiles">
         <div
           id="touchMoveStick"
