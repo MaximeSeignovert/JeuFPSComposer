@@ -554,7 +554,6 @@ export async function createDesertWorldRenderer(ctx) {
     const group = new THREE.Group();
     const fabricGeometry = new THREE.PlaneGeometry(width, depth, 18, 10);
     const positions = fabricGeometry.attributes.position;
-    const baseHeights = new Float32Array(positions.count);
     for (let index = 0; index < positions.count; index += 1) {
       const localX = positions.getX(index);
       const localY = positions.getY(index);
@@ -562,7 +561,6 @@ export async function createDesertWorldRenderer(ctx) {
       const normalizedY = localY / (depth * 0.5);
       const sag = -0.34 * (1 - normalizedX * normalizedX) - 0.08 * Math.cos(normalizedY * Math.PI * 2);
       positions.setZ(index, sag);
-      baseHeights[index] = sag;
     }
     fabricGeometry.computeVertexNormals();
     const fabricMaterial = materials.fabric.clone();
@@ -595,17 +593,6 @@ export async function createDesertWorldRenderer(ctx) {
     group.position.set(x, y, z);
     group.rotation.y = rotationY;
     scene.add(group);
-    const windPhase = x * 0.31 + z * 0.17;
-    ctx.mapAnimators.push((time) => {
-      for (let index = 0; index < positions.count; index += 1) {
-        const localX = positions.getX(index);
-        const localY = positions.getY(index);
-        const edgeFade = 1 - Math.min(1, Math.abs(localX) / (width * 0.5));
-        const flutter = Math.sin(time * 1.35 + localX * 0.8 + localY * 0.42 + windPhase) * 0.035 * edgeFade;
-        positions.setZ(index, baseHeights[index] + flutter);
-      }
-      positions.needsUpdate = true;
-    });
   }
 
   function addPalm({ x, z, scale = 1 }) {
@@ -711,10 +698,6 @@ export async function createDesertWorldRenderer(ctx) {
     geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
     const dust = new THREE.Points(geometry, new THREE.PointsMaterial({ color: 0xe7c98c, size: 0.045, transparent: true, opacity: 0.34, depthWrite: false }));
     scene.add(dust);
-    ctx.mapAnimators.push((time) => {
-      dust.rotation.y = time * 0.006;
-      dust.position.x = Math.sin(time * 0.08) * 0.8;
-    });
   }
 
   function addDesertAsset(assetConfig) {
