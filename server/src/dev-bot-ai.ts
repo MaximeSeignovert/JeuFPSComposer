@@ -19,43 +19,65 @@ export type BotTarget = {
   alive: boolean;
 };
 
-// These points deliberately stay on the ground-level routes of Qasr Al-Rih.
-// They are server-side gameplay data: visual map changes must update this graph too.
-export const DESERT_NAVIGATION: NavWaypoint[] = [
-  { id: "nw", position: { x: -33, y: 0, z: -30 }, links: ["north-west", "west-north"] },
-  { id: "north-west", position: { x: -15, y: 0, z: -34 }, links: ["nw", "north-center", "west-north"] },
-  { id: "north-center", position: { x: 0, y: 0, z: -35 }, links: ["north-west", "north-east", "center-north"] },
-  { id: "north-east", position: { x: 16, y: 0, z: -35 }, links: ["north-center", "east-north"] },
-  { id: "east-north", position: { x: 33, y: 0, z: -24 }, links: ["north-east", "east-mid"] },
-  { id: "east-mid", position: { x: 35, y: 0, z: -5 }, links: ["east-north", "east-south", "caravan-north"] },
-  { id: "east-south", position: { x: 32, y: 0, z: 27 }, links: ["east-mid", "south-east", "caravan-south"] },
-  { id: "south-east", position: { x: 17, y: 0, z: 34 }, links: ["east-south", "south-center"] },
-  { id: "south-center", position: { x: -5, y: 0, z: 34 }, links: ["south-east", "south-west", "garden-east"] },
-  { id: "south-west", position: { x: -34, y: 0, z: 26 }, links: ["south-center", "west-south"] },
-  { id: "west-south", position: { x: -34, y: 0, z: 18 }, links: ["south-west", "west-mid"] },
-  { id: "west-mid", position: { x: -34, y: 0, z: -6 }, links: ["west-south", "west-north", "residence-south"] },
-  { id: "west-north", position: { x: -33, y: 0, z: -20 }, links: ["west-mid", "nw", "north-west"] },
-  { id: "center-north", position: { x: 0, y: 0, z: -12 }, links: ["north-center", "bazaar-west", "bazaar-east"] },
-  { id: "bazaar-west", position: { x: -12, y: 0, z: 4 }, links: ["center-north", "garden-west", "residence-south"] },
-  { id: "bazaar-east", position: { x: 12, y: 0, z: 5 }, links: ["center-north", "caravan-north", "garden-east"] },
-  { id: "residence-south", position: { x: -18, y: 0, z: 15 }, links: ["bazaar-west", "west-mid", "garden-west"] },
-  { id: "caravan-north", position: { x: 18, y: 0, z: -8 }, links: ["bazaar-east", "east-mid", "caravan-south"] },
-  { id: "caravan-south", position: { x: 18, y: 0, z: 22 }, links: ["caravan-north", "east-south", "garden-east"] },
-  { id: "garden-west", position: { x: -20, y: 0, z: 20 }, links: ["residence-south", "bazaar-west", "south-center"] },
-  { id: "garden-east", position: { x: 4, y: 0, z: 22 }, links: ["garden-west", "bazaar-east", "caravan-south", "south-center"] }
+// Ground-level obstacles that matter for bot visibility. These mirror the
+// solid building/wall assets of DESERT_MAP_LAYOUT; low decoration is omitted.
+export const DESERT_BLOCKING_VOLUMES: BlockingVolume[] = [
+  { x: -39, z: 0, width: 2, depth: 80 }, { x: 39, z: 0, width: 2, depth: 80 },
+  { x: 0, z: -39, width: 80, depth: 2 }, { x: 0, z: 39, width: 80, depth: 2 },
+  { x: -26, z: 5, width: 11, depth: 13 }, { x: 24, z: 9, width: 18, depth: 20 },
+  { x: 3, z: -27, width: 15, depth: 9 }, { x: 29, z: -14, width: 13, depth: 12 },
+  { x: -10, z: 28, width: 12, depth: 10 }, { x: 23, z: 26, width: 10, depth: 10 },
+  { x: -29, z: -25, width: 7, depth: 7 }, { x: 31, z: -32, width: 7, depth: 7 },
+  { x: -34, z: 34, width: 7, depth: 7 },
+  { x: -8, z: -2, width: 0.9, depth: 5 }, { x: 8, z: -5, width: 7, depth: 0.9 },
+  { x: -24, z: -8, width: 7, depth: 0.9 }, { x: -14, z: -22, width: 0.9, depth: 5 },
+  { x: 10, z: 16, width: 0.9, depth: 5 }, { x: -7, z: 20, width: 7, depth: 0.9 },
+  { x: 30, z: 33, width: 5, depth: 0.9 }, { x: 14, z: -22, width: 7, depth: 0.9 }
 ];
 
-// Ground-level walls that matter for bot visibility. Roofs and low decoration are omitted.
-export const DESERT_BLOCKING_VOLUMES: BlockingVolume[] = [
-  { x: -39, z: 0, width: 2, depth: 80 }, { x: 39, z: -10, width: 2, depth: 60 },
-  { x: 0, z: -39, width: 80, depth: 2 }, { x: -18, z: 39, width: 42, depth: 2 }, { x: 23, z: 39, width: 40, depth: 2 },
-  { x: -25, z: -25, width: 1.1, depth: 13 }, { x: -18.5, z: -18.8, width: 14, depth: 1.1 }, { x: -31.5, z: -13, width: 10, depth: 1.1 },
-  { x: -31.5, z: 5, width: 1.1, depth: 14 }, { x: -25, z: -2, width: 12, depth: 1.1 }, { x: -20, z: 2, width: 1.1, depth: 7 }, { x: -20, z: 11, width: 1.1, depth: 5 }, { x: -28, z: 12, width: 7, depth: 1.1 },
-  { x: -8.5, z: -1.5, width: 1.1, depth: 8 }, { x: -5.5, z: -5, width: 5, depth: 1.1 }, { x: 8, z: -4.5, width: 7, depth: 1.1 }, { x: 10.8, z: -1.5, width: 1.1, depth: 5 },
-  { x: 14, z: 3, width: 1, depth: 6 }, { x: 14, z: 15, width: 1, depth: 6 }, { x: 17, z: 0, width: 6, depth: 1 }, { x: 29.5, z: 0, width: 9, depth: 1 }, { x: 34, z: 9, width: 1, depth: 18 }, { x: 19.5, z: 18, width: 11, depth: 1 },
-  { x: -10, z: 21, width: 13, depth: 1.1 }, { x: -16, z: 27, width: 1.1, depth: 12 }, { x: -7.5, z: 31, width: 10, depth: 1.1 }, { x: 9.5, z: 32, width: 1.1, depth: 8 },
-  { x: 24, z: -17, width: 1.1, depth: 13 }, { x: 30, z: -11, width: 12, depth: 1.1 }
+// Waypoints stay on open ground. Links are derived from line of sight so the
+// graph follows map edits instead of hand-authored data drifting out of sync.
+const NAV_LINK_DISTANCE = 26;
+const NAV_POINTS: Array<{ id: string; position: Vec3Like }> = [
+  { id: "nw", position: { x: -35, y: 0, z: -35 } },
+  { id: "north-west", position: { x: -16, y: 0, z: -36 } },
+  { id: "north-center", position: { x: 0, y: 0, z: -36 } },
+  { id: "north-east", position: { x: 16, y: 0, z: -36 } },
+  { id: "east-north", position: { x: 36, y: 0, z: -30 } },
+  { id: "east-upper", position: { x: 37, y: 0, z: -14 } },
+  { id: "east-mid", position: { x: 37, y: 0, z: 4 } },
+  { id: "east-lower", position: { x: 37, y: 0, z: 20 } },
+  { id: "south-east", position: { x: 36, y: 0, z: 36 } },
+  { id: "south-center", position: { x: 16, y: 0, z: 36 } },
+  { id: "south-mid", position: { x: -4, y: 0, z: 36 } },
+  { id: "south-west", position: { x: -24, y: 0, z: 36 } },
+  { id: "west-south", position: { x: -36, y: 0, z: 24 } },
+  { id: "west-lower", position: { x: -37, y: 0, z: 10 } },
+  { id: "west-mid", position: { x: -37, y: 0, z: -8 } },
+  { id: "west-north", position: { x: -36, y: 0, z: -24 } },
+  { id: "center-north", position: { x: 0, y: 0, z: -16 } },
+  { id: "bazaar-west", position: { x: -16, y: 0, z: -2 } },
+  { id: "bazaar", position: { x: 0, y: 0, z: -5 } },
+  { id: "bazaar-east", position: { x: 12, y: 0, z: -3 } },
+  { id: "plaza", position: { x: 0, y: 0, z: 10 } },
+  { id: "residence-south", position: { x: -16, y: 0, z: 15 } },
+  { id: "garden-east", position: { x: 13, y: 0, z: 10 } },
+  { id: "caravan-north", position: { x: 18, y: 0, z: -14 } },
+  { id: "caravan-south", position: { x: 14, y: 0, z: 25 } },
+  { id: "garden-west", position: { x: -18, y: 0, z: 26 } },
+  { id: "garden", position: { x: 0, y: 0, z: 27 } },
+  { id: "north-pass", position: { x: 20, y: 0, z: -22 } },
+  { id: "north-east-inner", position: { x: 17, y: 0, z: -28 } }
 ];
+
+export const DESERT_NAVIGATION: NavWaypoint[] = NAV_POINTS.map((point) => ({
+  id: point.id,
+  position: point.position,
+  links: NAV_POINTS
+    .filter((other) => other.id !== point.id && distance2D(point.position, other.position) <= NAV_LINK_DISTANCE)
+    .filter((other) => hasLineOfSight(point.position, other.position))
+    .map((other) => other.id)
+}));
 
 export function distance2D(a: Vec3Like, b: Vec3Like) {
   return Math.hypot(a.x - b.x, a.z - b.z);
