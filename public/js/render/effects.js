@@ -207,7 +207,10 @@ export function createEffectsController(ctx) {
     ctx.raycaster.set(rayOrigin, rayDir);
     ctx.raycaster.far = maxDistance;
 
-    const targets = [...ctx.worldColliders];
+    // Tableau réutilisé : un tir de fusil à pompe trace 12 rayons d'affilée.
+    const targets = ctx.raycastTargets;
+    targets.length = 0;
+    for (const collider of ctx.worldColliders) targets.push(collider);
     ctx.remoteMeshes.forEach((remotePlayer) => {
       if (remotePlayer.alive === false || !remotePlayer.root?.visible) return;
       const hitbox = remotePlayer.root?.userData?.hitbox;

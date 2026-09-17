@@ -26,6 +26,7 @@ export function createGameContext({ dom, state, sceneSetup, viewModel, mapConfig
     explosionEffects: [],
     explodedGrenadeIds: new Set(),
     raycaster: new THREE.Raycaster(),
+    raycastTargets: [],
     clock: new THREE.Clock(),
     smoothedMoveVelocity: new THREE.Vector3(),
     lastNetworkSend: 0,

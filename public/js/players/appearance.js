@@ -175,68 +175,87 @@ export function setRemoteWeapon(root, weaponKey) {
   root.userData.remoteWeaponKey = normalizedKey;
 }
 
+// Scratch objects reused every frame: the combat pose runs for each remote
+// player on each frame, so allocating here caused heavy GC churn as lobbies filled.
+const _rotateParentQuat = new THREE.Quaternion();
+const _rotateWorldQuat = new THREE.Quaternion();
+const _rotateLocalQuat = new THREE.Quaternion();
+const _rotateAxis = new THREE.Vector3();
+const _rotateBoneOrigin = new THREE.Vector3();
+const _rotateBoneEnd = new THREE.Vector3();
+const _rotateCurrentDir = new THREE.Vector3();
+const _rotateTargetDir = new THREE.Vector3();
+const _ikShoulder = new THREE.Vector3();
+const _ikElbow = new THREE.Vector3();
+const _ikHand = new THREE.Vector3();
+const _ikDirection = new THREE.Vector3();
+const _ikReachable = new THREE.Vector3();
+const _ikPoleDir = new THREE.Vector3();
+const _ikSolvedElbow = new THREE.Vector3();
+const _combatRightHand = new THREE.Vector3();
+const _combatLeftHand = new THREE.Vector3();
+const _combatRightPole = new THREE.Vector3();
+const _combatLeftPole = new THREE.Vector3();
+const _locomotionRight = new THREE.Vector3();
+
 function rotateBoneAroundWorldAxis(bone, axis, angle) {
   if (!bone || Math.abs(angle) < 0.0001) return;
-  const parentWorldRotation = bone.parent.getWorldQuaternion(new THREE.Quaternion());
-  const localAxis = axis.clone().applyQuaternion(parentWorldRotation.invert()).normalize();
-  bone.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(localAxis, angle));
+  const parentWorldRotation = bone.parent.getWorldQuaternion(_rotateParentQuat);
+  const localAxis = _rotateAxis.copy(axis).applyQuaternion(parentWorldRotation.invert()).normalize();
+  bone.quaternion.premultiply(_rotateLocalQuat.setFromAxisAngle(localAxis, angle));
 }
 
 function rotateBoneToward(bone, child, target) {
   if (!bone || !child) return;
 
-  bone.updateWorldMatrix(true, false);
-  child.updateWorldMatrix(true, false);
-  const origin = bone.getWorldPosition(new THREE.Vector3());
-  const currentEnd = child.getWorldPosition(new THREE.Vector3());
-  const currentDirection = currentEnd.sub(origin).normalize();
-  const targetDirection = target.clone().sub(origin).normalize();
+  // getWorldPosition()/getWorldQuaternion() already refresh the parent chain,
+  // so the previous explicit full-root updates were redundant.
+  const origin = bone.getWorldPosition(_rotateBoneOrigin);
+  const currentEnd = child.getWorldPosition(_rotateBoneEnd);
+  const currentDirection = _rotateCurrentDir.copy(currentEnd).sub(origin).normalize();
+  const targetDirection = _rotateTargetDir.copy(target).sub(origin).normalize();
   if (currentDirection.lengthSq() < 0.0001 || targetDirection.lengthSq() < 0.0001) return;
 
-  const worldRotation = new THREE.Quaternion().setFromUnitVectors(currentDirection, targetDirection);
-  const parentRotation = bone.parent.getWorldQuaternion(new THREE.Quaternion());
-  const localRotation = parentRotation.clone().invert()
-    .multiply(worldRotation)
+  _rotateWorldQuat.setFromUnitVectors(currentDirection, targetDirection);
+  const parentRotation = bone.parent.getWorldQuaternion(_rotateParentQuat);
+  const localRotation = _rotateLocalQuat.copy(parentRotation).invert()
+    .multiply(_rotateWorldQuat)
     .multiply(parentRotation);
   bone.quaternion.premultiply(localRotation);
 }
 
-function solveTwoBoneIk(root, upperArm, foreArm, hand, target, pole) {
+function solveTwoBoneIk(upperArm, foreArm, hand, target, pole) {
   if (!upperArm || !foreArm || !hand) return;
 
-  root.updateMatrixWorld(true);
-  const shoulderPosition = upperArm.getWorldPosition(new THREE.Vector3());
-  const elbowPosition = foreArm.getWorldPosition(new THREE.Vector3());
-  const handPosition = hand.getWorldPosition(new THREE.Vector3());
+  const shoulderPosition = upperArm.getWorldPosition(_ikShoulder);
+  const elbowPosition = foreArm.getWorldPosition(_ikElbow);
+  const handPosition = hand.getWorldPosition(_ikHand);
   const upperLength = shoulderPosition.distanceTo(elbowPosition);
   const lowerLength = elbowPosition.distanceTo(handPosition);
   if (upperLength < 0.001 || lowerLength < 0.001) return;
 
-  const shoulderToTarget = target.clone().sub(shoulderPosition);
-  const rawDistance = shoulderToTarget.length();
+  const direction = _ikDirection.copy(target).sub(shoulderPosition);
+  const rawDistance = direction.length();
   if (rawDistance < 0.001) return;
+  direction.normalize();
 
-  const direction = shoulderToTarget.normalize();
   const minReach = Math.abs(upperLength - lowerLength) + 0.002;
   const maxReach = upperLength + lowerLength - 0.002;
   const distance = THREE.MathUtils.clamp(rawDistance, minReach, maxReach);
-  const reachableTarget = shoulderPosition.clone().addScaledVector(direction, distance);
+  const reachableTarget = _ikReachable.copy(shoulderPosition).addScaledVector(direction, distance);
   const along = (upperLength * upperLength - lowerLength * lowerLength + distance * distance) / (2 * distance);
   const height = Math.sqrt(Math.max(0, upperLength * upperLength - along * along));
 
-  const shoulderToPole = pole.clone().sub(shoulderPosition);
-  const poleDirection = shoulderToPole.clone()
-    .addScaledVector(direction, -shoulderToPole.dot(direction));
+  const poleDirection = _ikPoleDir.copy(pole).sub(shoulderPosition);
+  poleDirection.addScaledVector(direction, -poleDirection.dot(direction));
   if (poleDirection.lengthSq() < 0.0001) poleDirection.set(0, -1, 0);
   poleDirection.normalize();
-  const solvedElbow = shoulderPosition.clone()
+  const solvedElbow = _ikSolvedElbow.copy(shoulderPosition)
     .addScaledVector(direction, along)
     .addScaledVector(poleDirection, height);
 
   rotateBoneToward(upperArm, foreArm, solvedElbow);
-  root.updateMatrixWorld(true);
   rotateBoneToward(foreArm, hand, reachableTarget);
-  root.updateMatrixWorld(true);
 }
 
 export function updateRemoteCombatPose(root) {
@@ -244,15 +263,15 @@ export function updateRemoteCombatPose(root) {
   if (!combatPose) return;
 
   const { bones, modelPivot } = combatPose;
-  const target = (position) => modelPivot.localToWorld(new THREE.Vector3().fromArray(position));
-  const rightHandTarget = target(combatPose.rightHandTarget);
-  const leftHandTarget = target(combatPose.leftHandTarget);
-  const rightPoleTarget = target(combatPose.rightPoleTarget);
-  const leftPoleTarget = target(combatPose.leftPoleTarget);
+  const pivotMatrix = modelPivot.matrixWorld;
+  _combatRightHand.fromArray(combatPose.rightHandTarget).applyMatrix4(pivotMatrix);
+  _combatLeftHand.fromArray(combatPose.leftHandTarget).applyMatrix4(pivotMatrix);
+  _combatRightPole.fromArray(combatPose.rightPoleTarget).applyMatrix4(pivotMatrix);
+  _combatLeftPole.fromArray(combatPose.leftPoleTarget).applyMatrix4(pivotMatrix);
 
-  solveTwoBoneIk(root, bones.rightArm, bones.rightForeArm, bones.rightHand, rightHandTarget, rightPoleTarget);
+  solveTwoBoneIk(bones.rightArm, bones.rightForeArm, bones.rightHand, _combatRightHand, _combatRightPole);
   if (combatPose.twoHanded) {
-    solveTwoBoneIk(root, bones.leftArm, bones.leftForeArm, bones.leftHand, leftHandTarget, leftPoleTarget);
+    solveTwoBoneIk(bones.leftArm, bones.leftForeArm, bones.leftHand, _combatLeftHand, _combatLeftPole);
   }
 }
 
@@ -295,7 +314,7 @@ export function updateRemoteLocomotion(root, delta, speed) {
   const leftFootLift = Math.max(0, -Math.sin(locomotion.phase)) * 0.22 * amount;
   const rightFootLift = Math.max(0, Math.sin(locomotion.phase)) * 0.22 * amount;
   const { bones } = locomotion;
-  const characterRight = new THREE.Vector3(1, 0, 0).transformDirection(root.matrixWorld);
+  const characterRight = _locomotionRight.set(1, 0, 0).transformDirection(root.matrixWorld);
 
   // Mixamo leg bones have rotated local axes. Applying the stride around the
   // character's world-space right axis produces an actual forward/back step.

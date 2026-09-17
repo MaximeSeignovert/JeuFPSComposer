@@ -9,6 +9,7 @@ const DEATH_WEAPON_LABELS = {
 };
 const SHOW_FPS_STORAGE_KEY = "fps.showFps";
 const FPS_UPDATE_INTERVAL = 0.5;
+const SCOREBOARD_MIN_INTERVAL_MS = 200;
 
 export function createHudController(ctx) {
   const { camera, state } = ctx;
@@ -51,6 +52,10 @@ export function createHudController(ctx) {
   } = ctx.dom;
   let renderedDeathWeapon = null;
   let renderedWeaponSlots = "";
+  let renderedScoreboardSignature = "";
+  let lastScoreboardRenderAt = 0;
+  let pendingScoreboardPlayers = null;
+  let scoreboardRenderTimer = null;
   let fpsFrameCount = 0;
   let fpsElapsed = 0;
 
@@ -221,8 +226,13 @@ export function createHudController(ctx) {
       (state.weapon === "ak47" || state.weapon === "shotgun") &&
       !state.pauseOpen;
     const targetFov = shouldZoom ? stats.zoomFov : BASE_FOV;
-    camera.fov = THREE.MathUtils.lerp(camera.fov, targetFov, 0.2);
-    camera.updateProjectionMatrix();
+    const nextFov = THREE.MathUtils.lerp(camera.fov, targetFov, 0.2);
+    // La projection ne bouge pas la plupart du temps : recalculer la matrice
+    // chaque frame était inutile.
+    if (Math.abs(nextFov - camera.fov) > 0.001) {
+      camera.fov = nextFov;
+      camera.updateProjectionMatrix();
+    }
     sniperScope.classList.toggle("hidden", !shouldZoom);
     const showCrosshair = state.joined && state.isAlive && !state.pauseOpen && !shouldZoom && !shouldUseIronSights;
     crosshair.classList.toggle("hidden", !showCrosshair);
@@ -455,6 +465,36 @@ export function createHudController(ctx) {
   }
 
   function renderScoreboard(players) {
+    // `room:players` arrive à chaque touche non létale : reconstruire tout le
+    // DOM à ce rythme pesait lourd. On limite à 5 reconstructions/s, avec un
+    // rendu différé pour ne jamais rester bloqué sur un état périmé.
+    const signature = players
+      .map((p) => `${p.id}:${Number(p.kills) || 0}/${Number(p.deaths) || 0}:${p.alive === false ? 0 : 1}:${Number(p.health) || 0}`)
+      .join("|");
+    if (signature === renderedScoreboardSignature && !pendingScoreboardPlayers) return;
+
+    const elapsed = performance.now() - lastScoreboardRenderAt;
+    if (elapsed < SCOREBOARD_MIN_INTERVAL_MS) {
+      pendingScoreboardPlayers = players;
+      if (!scoreboardRenderTimer) {
+        scoreboardRenderTimer = window.setTimeout(() => {
+          scoreboardRenderTimer = null;
+          const pending = pendingScoreboardPlayers;
+          pendingScoreboardPlayers = null;
+          if (pending) renderScoreboard(pending);
+        }, SCOREBOARD_MIN_INTERVAL_MS - elapsed);
+      }
+      return;
+    }
+
+    if (scoreboardRenderTimer) {
+      window.clearTimeout(scoreboardRenderTimer);
+      scoreboardRenderTimer = null;
+    }
+    pendingScoreboardPlayers = null;
+    renderedScoreboardSignature = signature;
+    lastScoreboardRenderAt = performance.now();
+
     const scoreboard = [...players].sort((a, b) => {
       const killDiff = (Number(b.kills) || 0) - (Number(a.kills) || 0);
       if (killDiff !== 0) return killDiff;

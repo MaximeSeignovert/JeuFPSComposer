@@ -866,6 +866,12 @@ export async function createDesertWorldRenderer(ctx) {
       light.position.set(lightPosition.x, 3.8, lightPosition.z);
       scene.add(light);
     }
+
+    // The arena and its casters are static (players, bullets and grenades never
+    // cast shadows), so bake the sun shadow map once instead of re-rendering
+    // the whole world into it on every frame.
+    renderer.shadowMap.autoUpdate = false;
+    renderer.shadowMap.needsUpdate = true;
   }
 
   function update(time, delta) {
